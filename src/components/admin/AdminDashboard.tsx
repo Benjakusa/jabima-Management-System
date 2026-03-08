@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
 import ExpenseCharts from './ExpenseCharts';
+import ProfitMarginWidget from './ProfitMarginWidget';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
   DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
