@@ -12,6 +12,7 @@ import { LogOut, ShoppingCart, Briefcase, Plus, X, Loader2, Receipt, Search, Wal
 import { cn } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
 import DailyReportForm from './DailyReportForm';
+import DailyReportReminder from './DailyReportReminder';
 
 const SERVICE_TYPES = ['Body Preservation', 'Body Transport', 'Hearse Service', 'Mortuary Service', 'Funeral Arrangement', 'Other'];
 
