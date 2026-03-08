@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 import WorkerDashboard from "./components/worker/WorkerDashboard";
 import SalesDashboard from "./components/worker/SalesDashboard";
+import InventoryOfficerDashboard from "./components/inventory/InventoryOfficerDashboard";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
