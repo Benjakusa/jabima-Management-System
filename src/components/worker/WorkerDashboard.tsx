@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import DailyReportForm from './DailyReportForm';
+import DailyReportReminder from './DailyReportReminder';
 
 const STAGES = [
   'wood_cutting', 'frame_assembly', 'board_fitting', 'sanding', 'fabric_lining',
@@ -115,6 +116,8 @@ const WorkerDashboard = () => {
       </header>
 
       <div className="p-4 max-w-2xl mx-auto space-y-6">
+        {/* Daily report reminder */}
+        <DailyReportReminder />
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
           <Card className="border"><CardContent className="p-3 text-center">
