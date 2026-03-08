@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
+import WorkerDashboard from "./components/worker/WorkerDashboard";
+import SalesDashboard from "./components/worker/SalesDashboard";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
@@ -40,19 +42,12 @@ const RoleRouter = () => {
   switch (role) {
     case 'admin':
       return <AdminPage />;
-    case 'inventory_officer':
     case 'workshop_worker':
+      return <WorkerDashboard />;
     case 'sales_officer':
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4">
-          <div className="text-center">
-            <h1 className="font-display text-xl font-bold text-foreground mb-2">
-              {role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} Dashboard
-            </h1>
-            <p className="text-muted-foreground">This dashboard will be available soon.</p>
-          </div>
-        </div>
-      );
+      return <SalesDashboard />;
+    case 'inventory_officer':
+      return <WorkerDashboard />;
     default:
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
