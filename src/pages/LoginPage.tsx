@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import logo from '@/assets/logo.png';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -35,9 +36,7 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-primary-foreground font-display text-2xl font-bold">J</span>
-          </div>
+          <img src={logo} alt="Jabima Funeral Directors" className="w-16 h-16 rounded-2xl mx-auto mb-4" />
           <h1 className="font-display text-2xl font-bold text-foreground">Jabima</h1>
           <p className="text-muted-foreground text-sm mt-1">Funeral Directors Management</p>
         </div>
