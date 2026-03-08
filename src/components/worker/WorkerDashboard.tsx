@@ -83,12 +83,21 @@ const WorkerDashboard = () => {
   });
 
   const completeMutation = useMutation({
-    mutationFn: async (logId: string) => {
-      const { error } = await supabase.from('stage_logs').update({ completed_at: new Date().toISOString() }).eq('id', logId);
+    mutationFn: async (log: { id: string; production_order_id: string; stage: string }) => {
+      // Mark stage log as completed
+      const { error } = await supabase.from('stage_logs').update({ completed_at: new Date().toISOString() }).eq('id', log.id);
       if (error) throw error;
+
+      // Advance the order to the next stage via secure DB function
+      const { error: advanceError } = await supabase.rpc('advance_production_stage', {
+        _order_id: log.production_order_id,
+        _current_stage: log.stage as any,
+        _worker_id: user!.id,
+      });
+      if (advanceError) throw advanceError;
     },
     onSuccess: () => {
-      toast({ title: 'Stage completed!' });
+      toast({ title: 'Stage completed & order advanced!' });
       queryClient.invalidateQueries({ queryKey: ['my-stage-logs'] });
       queryClient.invalidateQueries({ queryKey: ['my-stage-orders'] });
     },
@@ -159,7 +168,7 @@ const WorkerDashboard = () => {
                     <p className="text-xs text-muted-foreground">Order: {activeLog.production_order_id.slice(0, 8)}</p>
                     <p className="text-xs text-muted-foreground">Started: {new Date(activeLog.started_at).toLocaleTimeString()}</p>
                   </div>
-                  <Button size="sm" onClick={() => completeMutation.mutate(activeLog.id)} disabled={completeMutation.isPending}>
+                  <Button size="sm" onClick={() => completeMutation.mutate({ id: activeLog.id, production_order_id: activeLog.production_order_id, stage: activeLog.stage })} disabled={completeMutation.isPending}>
                     {completeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
                     Complete
                   </Button>

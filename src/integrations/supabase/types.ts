@@ -666,6 +666,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      advance_production_stage: {
+        Args: {
+          _current_stage: Database["public"]["Enums"]["production_stage"]
+          _order_id: string
+          _worker_id: string
+        }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
