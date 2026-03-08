@@ -2,11 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download, Printer, Package } from 'lucide-react';
+import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
+import { DateRange, filterByDateRange } from './DateRangeFilter';
 
-const InventoryReport = () => {
-  const { data: materials, isLoading: loadingMat } = useQuery({
+interface Props { dateRange: DateRange; }
+
+const InventoryReport = ({ dateRange }: Props) => {
+  const { data: allMaterials, isLoading: loadingMat } = useQuery({
     queryKey: ['report-materials'],
     queryFn: async () => {
       const { data } = await supabase.from('inventory_materials').select('*').order('name');
@@ -22,19 +25,18 @@ const InventoryReport = () => {
     },
   });
 
+  const materials = filterByDateRange(allMaterials || [], 'created_at', dateRange);
   const isLoading = loadingMat || loadingEq;
-  const totalValue = materials?.reduce((s, m) => s + m.quantity * m.unit_cost, 0) || 0;
-  const lowStock = materials?.filter(m => m.quantity <= m.min_stock_level).length || 0;
+  const totalValue = materials.reduce((s, m) => s + m.quantity * m.unit_cost, 0);
+  const lowStock = materials.filter(m => m.quantity <= m.min_stock_level).length;
 
   const handleCSV = () => {
-    if (!materials) return;
     exportCSV('inventory-report', ['Name', 'Category', 'Quantity', 'Unit', 'Unit Cost', 'Total Value', 'Min Stock'],
       materials.map(m => [m.name, m.category, String(m.quantity), m.unit, String(m.unit_cost), String(m.quantity * m.unit_cost), String(m.min_stock_level)])
     );
   };
 
   const handlePrint = () => {
-    if (!materials) return;
     const rows = materials.map(m =>
       `<tr><td>${m.name}</td><td>${m.category}</td><td>${m.quantity} ${m.unit}</td><td>${fmt(m.unit_cost)}</td><td>${fmt(m.quantity * m.unit_cost)}</td></tr>`
     ).join('');
@@ -52,7 +54,7 @@ const InventoryReport = () => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-display font-semibold text-foreground">Inventory Report</h3>
-          <p className="text-xs text-muted-foreground">{materials?.length || 0} materials • {equipment?.length || 0} equipment • {lowStock} low stock</p>
+          <p className="text-xs text-muted-foreground">{materials.length} materials • {equipment?.length || 0} equipment • {lowStock} low stock</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleCSV}><Download className="h-3.5 w-3.5" />CSV</Button>
@@ -60,14 +62,12 @@ const InventoryReport = () => {
         </div>
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Value</p><p className="text-lg font-bold font-display text-foreground">{fmt(totalValue)}</p></CardContent></Card>
-        <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Materials</p><p className="text-lg font-bold font-display text-foreground">{materials?.length || 0}</p></CardContent></Card>
+        <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Materials</p><p className="text-lg font-bold font-display text-foreground">{materials.length}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Low Stock</p><p className="text-lg font-bold font-display text-warning">{lowStock}</p></CardContent></Card>
       </div>
 
-      {/* Table */}
       <Card className="border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -79,7 +79,7 @@ const InventoryReport = () => {
               <th className="text-right p-3 font-medium text-muted-foreground">Value</th>
             </tr></thead>
             <tbody>
-              {(materials || []).map(m => (
+              {materials.map(m => (
                 <tr key={m.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className="p-3 font-medium text-foreground">{m.name}</td>
                   <td className="p-3 text-muted-foreground">{m.category}</td>

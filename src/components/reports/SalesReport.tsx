@@ -4,9 +4,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
+import { DateRange, filterByDateRange } from './DateRangeFilter';
 
-const SalesReport = () => {
-  const { data: productSales, isLoading: l1 } = useQuery({
+interface Props { dateRange: DateRange; }
+
+const SalesReport = ({ dateRange }: Props) => {
+  const { data: allProductSales, isLoading: l1 } = useQuery({
     queryKey: ['report-product-sales'],
     queryFn: async () => {
       const { data } = await supabase.from('sales').select('*').order('created_at', { ascending: false });
@@ -14,7 +17,7 @@ const SalesReport = () => {
     },
   });
 
-  const { data: serviceSales, isLoading: l2 } = useQuery({
+  const { data: allServiceSales, isLoading: l2 } = useQuery({
     queryKey: ['report-service-sales'],
     queryFn: async () => {
       const { data } = await supabase.from('service_sales').select('*').order('created_at', { ascending: false });
@@ -30,15 +33,18 @@ const SalesReport = () => {
     },
   });
 
+  const productSales = filterByDateRange(allProductSales || [], 'created_at', dateRange);
+  const serviceSales = filterByDateRange(allServiceSales || [], 'created_at', dateRange);
+
   const isLoading = l1 || l2;
-  const productRevenue = productSales?.reduce((s, r) => s + r.selling_price, 0) || 0;
-  const serviceRevenue = serviceSales?.reduce((s, r) => s + r.amount, 0) || 0;
+  const productRevenue = productSales.reduce((s, r) => s + r.selling_price, 0);
+  const serviceRevenue = serviceSales.reduce((s, r) => s + r.amount, 0);
   const totalRevenue = productRevenue + serviceRevenue;
   const getName = (uid: string) => profiles?.find(p => p.user_id === uid)?.full_name || 'Unknown';
 
   const allSales = [
-    ...(productSales || []).map(s => ({ type: 'Product', item: s.product_type, customer: s.customer_name, amount: s.selling_price, mpesa: s.mpesa_code, officer: getName(s.sales_officer_id), date: s.created_at })),
-    ...(serviceSales || []).map(s => ({ type: 'Service', item: s.service_name, customer: s.customer_name, amount: s.amount, mpesa: s.mpesa_code, officer: getName(s.sales_officer_id), date: s.created_at })),
+    ...productSales.map(s => ({ type: 'Product', item: s.product_type, customer: s.customer_name, amount: s.selling_price, mpesa: s.mpesa_code, officer: getName(s.sales_officer_id), date: s.created_at })),
+    ...serviceSales.map(s => ({ type: 'Service', item: s.service_name, customer: s.customer_name, amount: s.amount, mpesa: s.mpesa_code, officer: getName(s.sales_officer_id), date: s.created_at })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const handleCSV = () => {
@@ -64,7 +70,7 @@ const SalesReport = () => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-display font-semibold text-foreground">Sales Report</h3>
-          <p className="text-xs text-muted-foreground">{allSales.length} transactions</p>
+          <p className="text-xs text-muted-foreground">{allSales.length} transactions in range</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleCSV}><Download className="h-3.5 w-3.5" />CSV</Button>
