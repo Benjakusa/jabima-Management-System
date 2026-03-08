@@ -88,7 +88,10 @@ const ProductDetail = ({ productId }: Props) => {
           <div className="flex items-start justify-between mb-3">
             <div>
               <h3 className="font-display text-lg font-bold text-foreground">{order.product_type}</h3>
-              <p className="text-xs text-muted-foreground">Product ID: {order.id.slice(0, 8)}</p>
+              {order.product_code && (
+                <p className="text-sm font-mono text-primary font-medium">{order.product_code}</p>
+              )}
+              <p className="text-xs text-muted-foreground">ID: {order.id.slice(0, 8)}</p>
             </div>
             <span className={cn(
               "text-xs font-bold px-3 py-1 rounded-full",
@@ -102,6 +105,12 @@ const ProductDetail = ({ productId }: Props) => {
               <Calendar className="h-4 w-4" />
               <span>Started: {new Date(order.started_at).toLocaleDateString()}</span>
             </div>
+            {order.expected_completion_date && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>Due: {new Date(order.expected_completion_date).toLocaleDateString()}</span>
+              </div>
+            )}
             {order.completed_at && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CheckCircle className="h-4 w-4" />
@@ -114,13 +123,22 @@ const ProductDetail = ({ productId }: Props) => {
                 <span>Current: {STAGES.find(s => s.value === order.current_stage)?.label}</span>
               </div>
             )}
-            {order.production_cost > 0 && (
+            {order.batch_number && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Package className="h-4 w-4" />
+                <span>Batch: {order.batch_number}</span>
+              </div>
+            )}
+            {order.production_cost && order.production_cost > 0 && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Package className="h-4 w-4" />
                 <span>Cost: Ksh {order.production_cost.toLocaleString()}</span>
               </div>
             )}
           </div>
+          {order.notes && (
+            <p className="text-xs text-muted-foreground mt-3 bg-accent/30 rounded-lg p-2">{order.notes}</p>
+          )}
         </CardContent>
       </Card>
 

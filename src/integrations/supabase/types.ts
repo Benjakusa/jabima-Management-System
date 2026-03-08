@@ -258,6 +258,8 @@ export type Database = {
           production_order_id: string
           quantity_used: number
           stage: Database["public"]["Enums"]["production_stage"] | null
+          status: string
+          worker_id: string | null
         }
         Insert: {
           created_at?: string
@@ -266,6 +268,8 @@ export type Database = {
           production_order_id: string
           quantity_used: number
           stage?: Database["public"]["Enums"]["production_stage"] | null
+          status?: string
+          worker_id?: string | null
         }
         Update: {
           created_at?: string
@@ -274,6 +278,8 @@ export type Database = {
           production_order_id?: string
           quantity_used?: number
           stage?: Database["public"]["Enums"]["production_stage"] | null
+          status?: string
+          worker_id?: string | null
         }
         Relationships: [
           {
@@ -294,33 +300,45 @@ export type Database = {
       }
       production_orders: {
         Row: {
+          batch_number: string | null
           completed_at: string | null
           created_at: string
           created_by: string | null
           current_stage: Database["public"]["Enums"]["production_stage"]
+          expected_completion_date: string | null
           id: string
+          notes: string | null
+          product_code: string | null
           product_type: string
           production_cost: number | null
           started_at: string
           status: Database["public"]["Enums"]["product_status"]
         }
         Insert: {
+          batch_number?: string | null
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
           current_stage?: Database["public"]["Enums"]["production_stage"]
+          expected_completion_date?: string | null
           id?: string
+          notes?: string | null
+          product_code?: string | null
           product_type: string
           production_cost?: number | null
           started_at?: string
           status?: Database["public"]["Enums"]["product_status"]
         }
         Update: {
+          batch_number?: string | null
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
           current_stage?: Database["public"]["Enums"]["production_stage"]
+          expected_completion_date?: string | null
           id?: string
+          notes?: string | null
+          product_code?: string | null
           product_type?: string
           production_cost?: number | null
           started_at?: string
@@ -674,6 +692,38 @@ export type Database = {
         }
         Returns: undefined
       }
+      create_production_batch: {
+        Args: {
+          p_batch_number: string
+          p_created_by?: string
+          p_expected_completion_date?: string
+          p_notes?: string
+          p_product_type: string
+          p_quantity: number
+        }
+        Returns: {
+          batch_number: string | null
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          current_stage: Database["public"]["Enums"]["production_stage"]
+          expected_completion_date: string | null
+          id: string
+          notes: string | null
+          product_code: string | null
+          product_type: string
+          production_cost: number | null
+          started_at: string
+          status: Database["public"]["Enums"]["product_status"]
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "production_orders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      generate_product_code: { Args: { p_type: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
