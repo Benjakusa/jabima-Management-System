@@ -6,6 +6,7 @@ import InventoryManagement from '@/components/inventory/InventoryManagement';
 import ProductionManagement from '@/components/production/ProductionManagement';
 import SalesManagement from '@/components/sales/SalesManagement';
 import WalletManagement from '@/components/wallet/WalletManagement';
+import ReportsManagement from '@/components/reports/ReportsManagement';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
