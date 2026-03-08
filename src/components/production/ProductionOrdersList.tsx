@@ -35,7 +35,10 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
   const [batchNumber, setBatchNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [expectedDate, setExpectedDate] = useState('');
+  const [size, setSize] = useState('Adult');
+  const [materialType, setMaterialType] = useState('Pine');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const { user } = useAuth();
   const { toast } = useToast();
