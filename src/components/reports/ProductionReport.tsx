@@ -122,6 +122,7 @@ const ProductionReport = ({ dateRange }: Props) => {
         );
       })()}
 
+      <Card className="border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b bg-secondary/50">
