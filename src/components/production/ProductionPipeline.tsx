@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { 
   Scissors, Hammer, LayoutGrid, Wind, Palette, PaintBucket, 
   Grip, GlassWater, Wrench, CheckCircle 
@@ -62,7 +63,6 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
     );
   }
 
-  // Group orders by stage
   const stageGroups = STAGES.map(stage => ({
     ...stage,
     orders: (orders || []).filter(o => o.current_stage === stage.value),
@@ -72,7 +72,6 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
 
   return (
     <div className="space-y-4">
-      {/* Summary bar */}
       <div className="flex items-center gap-3 bg-card rounded-2xl border p-4">
         <div className="flex-1">
           <p className="text-2xl font-bold font-display text-foreground">{totalInProd}</p>
@@ -84,7 +83,6 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
         </div>
       </div>
 
-      {/* Pipeline stages */}
       <div className="space-y-3">
         {stageGroups.map((stage) => (
           <div key={stage.value} className="bg-card rounded-2xl border overflow-hidden">
@@ -112,9 +110,15 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors text-left"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{order.product_type}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-foreground truncate">{order.product_type}</p>
+                        {order.product_code && (
+                          <Badge variant="outline" className="text-[10px] font-mono shrink-0">{order.product_code}</Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        ID: {order.id.slice(0, 8)} • Started {new Date(order.started_at).toLocaleDateString()}
+                        {order.batch_number && `${order.batch_number} • `}
+                        Started {new Date(order.started_at).toLocaleDateString()}
                       </p>
                     </div>
                     <span className="text-xs text-primary font-medium">View →</span>
