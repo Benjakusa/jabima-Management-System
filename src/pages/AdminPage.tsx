@@ -26,7 +26,7 @@ const AdminPage = () => {
       case 'wallet':
         return <WalletManagement />;
       case 'reports':
-        return <PlaceholderSection title="Reports" description="Generate and export business reports" />;
+        return <ReportsManagement />;
       case 'settings':
         return <PlaceholderSection title="Settings" description="System configuration and preferences" />;
       default:
