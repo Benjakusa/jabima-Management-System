@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import StatCard from '@/components/cards/StatCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import ProductionChart from './ProductionChart';
+import RevenueChart from './RevenueChart';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
   DollarSign, Clock, TrendingUp, AlertTriangle
@@ -131,16 +133,12 @@ const AdminDashboard = () => {
       {/* Missing Daily Reports Alert */}
       <MissingReportsAlert />
 
-      {/* Placeholder for charts section */}
+      {/* Analytics Charts */}
       <div>
         <h3 className="font-display text-lg font-semibold text-foreground mb-3">Analytics</h3>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-card rounded-2xl border p-6 h-64 flex items-center justify-center">
-            <p className="text-muted-foreground text-sm">Production Progress Chart</p>
-          </div>
-          <div className="bg-card rounded-2xl border p-6 h-64 flex items-center justify-center">
-            <p className="text-muted-foreground text-sm">Sales Revenue Chart</p>
-          </div>
+          <ProductionChart />
+          <RevenueChart />
         </div>
       </div>
     </div>
