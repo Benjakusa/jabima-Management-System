@@ -4,11 +4,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
+import { DateRange, filterByDateRange } from './DateRangeFilter';
 
 const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-const ProductionReport = () => {
-  const { data: orders, isLoading } = useQuery({
+interface Props { dateRange: DateRange; }
+
+const ProductionReport = ({ dateRange }: Props) => {
+  const { data: allOrders, isLoading } = useQuery({
     queryKey: ['report-production'],
     queryFn: async () => {
       const { data } = await supabase.from('production_orders').select('*').order('created_at', { ascending: false });
@@ -16,7 +19,7 @@ const ProductionReport = () => {
     },
   });
 
-  const { data: finished } = useQuery({
+  const { data: allFinished } = useQuery({
     queryKey: ['report-finished'],
     queryFn: async () => {
       const { data } = await supabase.from('finished_products').select('*');
@@ -24,13 +27,15 @@ const ProductionReport = () => {
     },
   });
 
-  const inProduction = orders?.filter(o => o.status === 'in_production').length || 0;
-  const completed = orders?.filter(o => o.status === 'completed').length || 0;
-  const totalCost = orders?.reduce((s, o) => s + (o.production_cost || 0), 0) || 0;
-  const sold = finished?.filter(f => f.status === 'sold').length || 0;
+  const orders = filterByDateRange(allOrders || [], 'created_at', dateRange);
+  const finished = filterByDateRange(allFinished || [], 'completed_at', dateRange);
+
+  const inProduction = orders.filter(o => o.status === 'in_production').length;
+  const completed = orders.filter(o => o.status === 'completed').length;
+  const totalCost = orders.reduce((s, o) => s + (o.production_cost || 0), 0);
+  const sold = finished.filter(f => f.status === 'sold').length;
 
   const handleCSV = () => {
-    if (!orders) return;
     exportCSV('production-report', ['Product Type', 'Status', 'Current Stage', 'Cost', 'Started', 'Completed'],
       orders.map(o => [o.product_type, o.status, formatStage(o.current_stage), String(o.production_cost || 0),
         new Date(o.started_at).toLocaleDateString(), o.completed_at ? new Date(o.completed_at).toLocaleDateString() : '-'])
@@ -38,7 +43,6 @@ const ProductionReport = () => {
   };
 
   const handlePrint = () => {
-    if (!orders) return;
     const rows = orders.map(o =>
       `<tr><td>${o.product_type}</td><td>${o.status}</td><td>${formatStage(o.current_stage)}</td><td>${fmt(o.production_cost || 0)}</td><td>${new Date(o.started_at).toLocaleDateString()}</td></tr>`
     ).join('');
@@ -55,7 +59,7 @@ const ProductionReport = () => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-display font-semibold text-foreground">Production Report</h3>
-          <p className="text-xs text-muted-foreground">{orders?.length || 0} orders total</p>
+          <p className="text-xs text-muted-foreground">{orders.length} orders in range</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleCSV}><Download className="h-3.5 w-3.5" />CSV</Button>
@@ -81,7 +85,7 @@ const ProductionReport = () => {
               <th className="text-right p-3 font-medium text-muted-foreground">Started</th>
             </tr></thead>
             <tbody>
-              {(orders || []).map(o => (
+              {orders.map(o => (
                 <tr key={o.id} className="border-b last:border-0 hover:bg-accent/30">
                   <td className="p-3 font-medium text-foreground">{o.product_type}</td>
                   <td className="p-3"><span className={`text-xs px-2 py-0.5 rounded-md ${o.status === 'in_production' ? 'bg-warning/10 text-warning' : o.status === 'completed' ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>{o.status}</span></td>

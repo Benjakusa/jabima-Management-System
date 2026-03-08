@@ -4,10 +4,12 @@ import InventoryReport from '@/components/reports/InventoryReport';
 import ProductionReport from '@/components/reports/ProductionReport';
 import SalesReport from '@/components/reports/SalesReport';
 import ProfitLossReport from '@/components/reports/ProfitLossReport';
+import DateRangeFilter, { DateRange } from '@/components/reports/DateRangeFilter';
 import { Package, Factory, ShoppingCart, TrendingUp } from 'lucide-react';
 
 const ReportsManagement = () => {
   const [activeTab, setActiveTab] = useState('inventory');
+  const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
 
   return (
     <div className="space-y-6">
@@ -15,6 +17,8 @@ const ReportsManagement = () => {
         <h2 className="font-display text-xl font-bold text-foreground">Reports</h2>
         <p className="text-sm text-muted-foreground">Generate and export business reports</p>
       </div>
+
+      <DateRangeFilter dateRange={dateRange} onChange={setDateRange} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full flex overflow-x-auto bg-secondary/50 p-1 rounded-xl h-auto">
@@ -36,10 +40,10 @@ const ReportsManagement = () => {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="inventory" className="mt-4"><InventoryReport /></TabsContent>
-        <TabsContent value="production" className="mt-4"><ProductionReport /></TabsContent>
-        <TabsContent value="sales" className="mt-4"><SalesReport /></TabsContent>
-        <TabsContent value="pnl" className="mt-4"><ProfitLossReport /></TabsContent>
+        <TabsContent value="inventory" className="mt-4"><InventoryReport dateRange={dateRange} /></TabsContent>
+        <TabsContent value="production" className="mt-4"><ProductionReport dateRange={dateRange} /></TabsContent>
+        <TabsContent value="sales" className="mt-4"><SalesReport dateRange={dateRange} /></TabsContent>
+        <TabsContent value="pnl" className="mt-4"><ProfitLossReport dateRange={dateRange} /></TabsContent>
       </Tabs>
     </div>
   );
