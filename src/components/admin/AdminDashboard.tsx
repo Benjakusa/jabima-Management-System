@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
+import ExpenseCharts from './ExpenseCharts';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
   DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
@@ -142,6 +143,7 @@ const AdminDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ProductionChart />
           <RevenueChart />
+          <ExpenseCharts />
         </div>
       </div>
     </div>
