@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
 import { DateRange, filterByDateRange } from './DateRangeFilter';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const COLORS = ['hsl(var(--warning))', 'hsl(var(--success))', 'hsl(var(--primary))', 'hsl(var(--destructive))'];
 
 const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
@@ -74,7 +77,51 @@ const ProductionReport = ({ dateRange }: Props) => {
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Cost</p><p className="text-lg font-bold font-display text-foreground">{fmt(totalCost)}</p></CardContent></Card>
       </div>
 
-      <Card className="border overflow-hidden">
+      {/* Charts */}
+      {orders.length > 0 && (() => {
+        const statusData = [
+          { name: 'In Production', value: inProduction },
+          { name: 'Completed', value: completed },
+          { name: 'Sold', value: sold },
+        ].filter(d => d.value > 0);
+
+        // By product type
+        const byType: Record<string, number> = {};
+        orders.forEach(o => { byType[o.product_type] = (byType[o.product_type] || 0) + 1; });
+        const typeData = Object.entries(byType).map(([name, count]) => ({ name, count }));
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="border">
+              <CardContent className="p-4">
+                <p className="text-xs font-medium text-muted-foreground mb-3">Status Distribution</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={statusData} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 10 }}>
+                      {statusData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <Card className="border">
+              <CardContent className="p-4">
+                <p className="text-xs font-medium text-muted-foreground mb-3">Orders by Product Type</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={typeData}>
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b bg-secondary/50">

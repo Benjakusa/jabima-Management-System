@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
 import { DateRange, filterByDateRange } from './DateRangeFilter';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const COLORS = ['hsl(var(--primary))', 'hsl(var(--success))', 'hsl(var(--warning))', 'hsl(var(--destructive))', '#8b5cf6', '#06b6d4'];
 
 interface Props { dateRange: DateRange; }
 
@@ -68,6 +71,40 @@ const InventoryReport = ({ dateRange }: Props) => {
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Low Stock</p><p className="text-lg font-bold font-display text-warning">{lowStock}</p></CardContent></Card>
       </div>
 
+      {/* Charts */}
+      {materials.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card className="border">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground mb-3">Value by Category</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={Object.entries(materials.reduce<Record<string, number>>((acc, m) => { acc[m.category] = (acc[m.category] || 0) + m.quantity * m.unit_cost; return acc; }, {})).map(([name, value]) => ({ name, value }))}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number) => fmt(v)} />
+                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card className="border">
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground mb-3">Distribution by Category</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={Object.entries(materials.reduce<Record<string, number>>((acc, m) => { acc[m.category] = (acc[m.category] || 0) + 1; return acc; }, {})).map(([name, value]) => ({ name, value }))}
+                    cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 10 }}>
+                    {Object.keys(materials.reduce<Record<string, number>>((acc, m) => { acc[m.category] = 1; return acc; }, {})).map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       <Card className="border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

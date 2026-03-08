@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Download, Printer, TrendingUp, TrendingDown } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
 import { DateRange, filterByDateRange } from './DateRangeFilter';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface Props { dateRange: DateRange; }
 
@@ -123,6 +124,25 @@ const ProfitLossReport = ({ dateRange }: Props) => {
         </CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Margin</p><p className={`text-lg font-bold font-display ${netProfit >= 0 ? 'text-success' : 'text-destructive'}`}>{margin}%</p></CardContent></Card>
       </div>
+
+      {/* P&L Chart */}
+      <Card className="border">
+        <CardContent className="p-4">
+          <p className="text-xs font-medium text-muted-foreground mb-3">Revenue vs Costs Breakdown</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={lineItems.map(l => ({ ...l, displayAmount: l.type === 'expense' ? -l.amount : l.amount }))}>
+              <XAxis dataKey="label" tick={{ fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={50} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => fmt(Math.abs(v))} />
+              <Bar dataKey="displayAmount" radius={[4, 4, 0, 0]}>
+                {lineItems.map((l, i) => (
+                  <Cell key={i} fill={l.type === 'revenue' ? 'hsl(var(--success))' : 'hsl(var(--destructive))'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
       <Card className="border overflow-hidden">
         <div className="overflow-x-auto">

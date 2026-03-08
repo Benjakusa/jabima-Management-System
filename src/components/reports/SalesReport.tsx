@@ -5,6 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
 import { DateRange, filterByDateRange } from './DateRangeFilter';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { format } from 'date-fns';
+
+const COLORS = ['hsl(var(--primary))', 'hsl(var(--success))'];
 
 interface Props { dateRange: DateRange; }
 
@@ -84,6 +88,58 @@ const SalesReport = ({ dateRange }: Props) => {
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Service Sales</p><p className="text-lg font-bold font-display text-foreground">{fmt(serviceRevenue)}</p></CardContent></Card>
       </div>
 
+      {/* Charts */}
+      {allSales.length > 0 && (() => {
+        // Daily revenue trend
+        const dailyMap: Record<string, { date: string; products: number; services: number }> = {};
+        productSales.forEach(s => {
+          const d = format(new Date(s.created_at), 'dd MMM');
+          if (!dailyMap[d]) dailyMap[d] = { date: d, products: 0, services: 0 };
+          dailyMap[d].products += s.selling_price;
+        });
+        serviceSales.forEach(s => {
+          const d = format(new Date(s.created_at), 'dd MMM');
+          if (!dailyMap[d]) dailyMap[d] = { date: d, products: 0, services: 0 };
+          dailyMap[d].services += s.amount;
+        });
+        const dailyData = Object.values(dailyMap).reverse().slice(-14);
+        const pieData = [
+          { name: 'Products', value: productRevenue },
+          { name: 'Services', value: serviceRevenue },
+        ].filter(d => d.value > 0);
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="border">
+              <CardContent className="p-4">
+                <p className="text-xs font-medium text-muted-foreground mb-3">Revenue Trend</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={dailyData}>
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(v: number) => fmt(v)} />
+                    <Area type="monotone" dataKey="products" stackId="1" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.3} />
+                    <Area type="monotone" dataKey="services" stackId="1" stroke="hsl(var(--success))" fill="hsl(var(--success))" fillOpacity={0.3} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <Card className="border">
+              <CardContent className="p-4">
+                <p className="text-xs font-medium text-muted-foreground mb-3">Revenue Split</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} style={{ fontSize: 11 }}>
+                      {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => fmt(v)} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
       <Card className="border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
