@@ -39,7 +39,6 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
   const [materialType, setMaterialType] = useState('Pine');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
