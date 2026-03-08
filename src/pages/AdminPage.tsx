@@ -4,6 +4,7 @@ import AdminDashboard from '@/components/admin/AdminDashboard';
 import UserManagement from '@/components/admin/UserManagement';
 import InventoryManagement from '@/components/inventory/InventoryManagement';
 import ProductionManagement from '@/components/production/ProductionManagement';
+import SalesManagement from '@/components/sales/SalesManagement';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -19,7 +20,7 @@ const AdminPage = () => {
       case 'production':
         return <ProductionManagement />;
       case 'sales':
-        return <PlaceholderSection title="Sales Monitoring" description="View all sales data and analytics" />;
+        return <SalesManagement />;
       case 'wallet':
         return <PlaceholderSection title="Wallet Management" description="Manage worker payments and approvals" />;
       case 'reports':
