@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppShell from '@/components/layout/AppShell';
 import AdminDashboard from '@/components/admin/AdminDashboard';
 import UserManagement from '@/components/admin/UserManagement';
+import InventoryManagement from '@/components/inventory/InventoryManagement';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -13,7 +14,7 @@ const AdminPage = () => {
       case 'users':
         return <UserManagement />;
       case 'inventory':
-        return <PlaceholderSection title="Inventory Management" description="Manage raw materials and service equipment" />;
+        return <InventoryManagement />;
       case 'production':
         return <PlaceholderSection title="Production Monitoring" description="Track casket production pipeline" />;
       case 'sales':
