@@ -74,7 +74,10 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
       onSuccess();
     },
     onError: (err: Error) => {
-      toast({ variant: 'destructive', title: 'Error', description: err.message });
+      const msg = err.message.includes('already been registered')
+        ? 'A user with this email already exists. Please use a different email.'
+        : err.message;
+      toast({ variant: 'destructive', title: 'Error', description: msg });
     },
   });
 
