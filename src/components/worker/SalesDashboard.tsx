@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { LogOut, ShoppingCart, Briefcase, Plus, X, Loader2, Receipt, Search, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
+import DailyReportForm from './DailyReportForm';
 
 const SERVICE_TYPES = ['Body Preservation', 'Body Transport', 'Hearse Service', 'Mortuary Service', 'Funeral Arrangement', 'Other'];
 
@@ -183,6 +184,7 @@ const SalesDashboard = () => {
                   </Card>
                 ))}
             </div>
+            <DailyReportForm />
           </div>
         )}
 

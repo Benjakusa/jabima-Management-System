@@ -9,6 +9,7 @@ import { LogOut, Factory, CheckCircle, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import DailyReportForm from './DailyReportForm';
 
 const STAGES = [
   'wood_cutting', 'frame_assembly', 'board_fitting', 'sanding', 'fabric_lining',
@@ -202,6 +203,9 @@ const WorkerDashboard = () => {
             </div>
           )}
         </div>
+
+        {/* Daily Report */}
+        <DailyReportForm />
 
         {/* Recent completed */}
         <div>
