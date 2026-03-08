@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import StatCard from '@/components/cards/StatCard';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
-  DollarSign, Clock, TrendingUp
+  DollarSign, Clock, TrendingUp, AlertTriangle
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -125,6 +128,9 @@ const AdminDashboard = () => {
         />
       </div>
 
+      {/* Missing Daily Reports Alert */}
+      <MissingReportsAlert />
+
       {/* Placeholder for charts section */}
       <div>
         <h3 className="font-display text-lg font-semibold text-foreground mb-3">Analytics</h3>
@@ -138,6 +144,65 @@ const AdminDashboard = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const MissingReportsAlert = () => {
+  const today = new Date().toISOString().split('T')[0];
+
+  const { data: workers } = useQuery({
+    queryKey: ['worker-roles-for-alerts'],
+    queryFn: async () => {
+      const { data } = await supabase.from('user_roles').select('user_id, role').in('role', ['workshop_worker', 'sales_officer']);
+      return data || [];
+    },
+  });
+
+  const { data: todayReports } = useQuery({
+    queryKey: ['today-reports-alert', today],
+    queryFn: async () => {
+      const { data } = await supabase.from('daily_reports').select('user_id').eq('report_date', today);
+      return data || [];
+    },
+  });
+
+  const { data: profiles } = useQuery({
+    queryKey: ['profiles-for-alerts'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('user_id, full_name');
+      return data || [];
+    },
+  });
+
+  const submittedIds = new Set(todayReports?.map(r => r.user_id) || []);
+  const missing = (workers || []).filter(w => !submittedIds.has(w.user_id));
+  const getName = (uid: string) => profiles?.find(p => p.user_id === uid)?.full_name || 'Unknown';
+  const formatRole = (r: string) => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  if (missing.length === 0) return null;
+
+  return (
+    <Card className="border border-destructive/30 bg-destructive/5">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          <h3 className="font-display font-semibold text-foreground text-sm">
+            Missing Daily Reports ({missing.length})
+          </h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          The following workers haven't submitted their daily report today:
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {missing.map(w => (
+            <Badge key={w.user_id} variant="destructive" className="text-xs gap-1">
+              {getName(w.user_id)}
+              <span className="opacity-60">• {formatRole(w.role)}</span>
+            </Badge>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
