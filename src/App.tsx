@@ -48,7 +48,7 @@ const RoleRouter = () => {
     case 'sales_officer':
       return <SalesDashboard />;
     case 'inventory_officer':
-      return <WorkerDashboard />;
+      return <InventoryOfficerDashboard />;
     default:
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
