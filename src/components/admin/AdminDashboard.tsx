@@ -8,7 +8,7 @@ import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
-  DollarSign, Clock, TrendingUp, AlertTriangle
+  DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -130,6 +130,9 @@ const AdminDashboard = () => {
         />
       </div>
 
+      {/* Recently Completed Orders */}
+      <RecentlyCompletedOrders />
+
       {/* Missing Daily Reports Alert */}
       <MissingReportsAlert />
 
@@ -197,6 +200,60 @@ const MissingReportsAlert = () => {
               {getName(w.user_id)}
               <span className="opacity-60">• {formatRole(w.role)}</span>
             </Badge>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const RecentlyCompletedOrders = () => {
+  const today = new Date().toISOString().split('T')[0];
+
+  const { data: recentCompleted } = useQuery({
+    queryKey: ['recently-completed-orders', today],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('finished_products')
+        .select('id, product_type, production_cost, completed_at, production_order_id')
+        .gte('completed_at', today)
+        .order('completed_at', { ascending: false })
+        .limit(10);
+      return data || [];
+    },
+    refetchInterval: 30000,
+  });
+
+  if (!recentCompleted || recentCompleted.length === 0) return null;
+
+  const formatCurrency = (val: number) => `Ksh ${val.toLocaleString()}`;
+
+  return (
+    <Card className="border border-success/30 bg-success/5">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <PartyPopper className="h-5 w-5 text-success" />
+          <h3 className="font-display font-semibold text-foreground text-sm">
+            Completed Today ({recentCompleted.length})
+          </h3>
+        </div>
+        <div className="space-y-2">
+          {recentCompleted.map(fp => (
+            <div key={fp.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-background/50">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-success" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">{fp.product_type}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(fp.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {' • '}Cost: {formatCurrency(fp.production_cost)}
+                  </p>
+                </div>
+              </div>
+              <Badge variant="secondary" className="text-[10px] bg-success/10 text-success border-success/20">
+                Finished
+              </Badge>
+            </div>
           ))}
         </div>
       </CardContent>
