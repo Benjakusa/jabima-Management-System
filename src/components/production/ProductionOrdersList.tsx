@@ -20,6 +20,9 @@ const productTypes = [
   'Custom Order',
 ];
 
+const sizes = ['Adult', 'Child', 'Infant'];
+const materialTypes = ['Oak', 'Mahogany', 'Pine', 'MDF', 'Cypress', 'Paulownia'];
+
 interface Props {
   onViewProduct: (id: string) => void;
 }
