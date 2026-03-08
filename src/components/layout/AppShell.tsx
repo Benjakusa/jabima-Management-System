@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   LayoutDashboard, Users, Package, Factory, ShoppingCart, 
-  Wallet, FileText, Settings, LogOut, Menu, X, Receipt
+  Wallet, FileText, Settings, LogOut, Menu, X, Receipt, ClipboardList
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ const adminNavItems: NavItem[] = [
   { label: 'Wallet', icon: <Wallet className="h-5 w-5" />, id: 'wallet' },
   { label: 'Expenses', icon: <Receipt className="h-5 w-5" />, id: 'expenses' },
   { label: 'Reports', icon: <FileText className="h-5 w-5" />, id: 'reports' },
+  { label: 'Daily Reports', icon: <ClipboardList className="h-5 w-5" />, id: 'daily-reports' },
   { label: 'Settings', icon: <Settings className="h-5 w-5" />, id: 'settings' },
 ];
 
