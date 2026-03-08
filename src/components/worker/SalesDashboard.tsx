@@ -184,6 +184,7 @@ const SalesDashboard = () => {
                   </Card>
                 ))}
             </div>
+            <DailyReportForm />
           </div>
         )}
 
