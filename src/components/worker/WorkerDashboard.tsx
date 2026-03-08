@@ -168,7 +168,7 @@ const WorkerDashboard = () => {
                     <p className="text-xs text-muted-foreground">Order: {activeLog.production_order_id.slice(0, 8)}</p>
                     <p className="text-xs text-muted-foreground">Started: {new Date(activeLog.started_at).toLocaleTimeString()}</p>
                   </div>
-                  <Button size="sm" onClick={() => completeMutation.mutate(activeLog.id)} disabled={completeMutation.isPending}>
+                  <Button size="sm" onClick={() => completeMutation.mutate({ id: activeLog.id, production_order_id: activeLog.production_order_id, stage: activeLog.stage })} disabled={completeMutation.isPending}>
                     {completeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
                     Complete
                   </Button>
