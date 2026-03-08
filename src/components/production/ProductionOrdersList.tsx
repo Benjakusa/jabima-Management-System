@@ -184,14 +184,28 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Quantity</Label>
                   <Input type="number" min="1" max="100" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="How many?" />
-                  <p className="text-[10px] text-muted-foreground">Each unit gets a unique Product ID</p>
+                  <p className="text-[10px] text-muted-foreground">Each gets a unique ID</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Batch Number (optional)</Label>
+                  <Label>Size</Label>
+                  <select value={size} onChange={(e) => setSize(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
+                    {sizes.map(s => <option key={s} value={s.toLowerCase()}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Material</Label>
+                  <select value={materialType} onChange={(e) => setMaterialType(e.target.value)}
+                    className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
+                    {materialTypes.map(m => <option key={m} value={m.toLowerCase()}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Batch Number</Label>
                   <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="e.g. BATCH-001" />
                 </div>
               </div>
