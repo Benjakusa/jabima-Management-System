@@ -8,6 +8,7 @@ import SalesManagement from '@/components/sales/SalesManagement';
 import WalletManagement from '@/components/wallet/WalletManagement';
 import ReportsManagement from '@/components/reports/ReportsManagement';
 import ExpenseManagement from '@/components/expenses/ExpenseManagement';
+import SettingsManagement from '@/components/settings/SettingsManagement';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -31,7 +32,7 @@ const AdminPage = () => {
       case 'expenses':
         return <ExpenseManagement />;
       case 'settings':
-        return <PlaceholderSection title="Settings" description="System configuration and preferences" />;
+        return <SettingsManagement />;
       default:
         return <AdminDashboard />;
     }
