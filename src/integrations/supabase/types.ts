@@ -349,35 +349,49 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          branch_id: string | null
           created_at: string
           email: string
           full_name: string
           id: string
+          is_muted: boolean
           phone: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           avatar_url?: string | null
+          branch_id?: string | null
           created_at?: string
           email: string
           full_name: string
           id?: string
+          is_muted?: boolean
           phone?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           avatar_url?: string | null
+          branch_id?: string | null
           created_at?: string
           email?: string
           full_name?: string
           id?: string
+          is_muted?: boolean
           phone?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sales: {
         Row: {
@@ -623,6 +637,8 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          payment_method: string | null
+          reference_number: string | null
           type: string
           wallet_id: string
         }
@@ -631,6 +647,8 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          payment_method?: string | null
+          reference_number?: string | null
           type: string
           wallet_id: string
         }
@@ -639,6 +657,8 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          payment_method?: string | null
+          reference_number?: string | null
           type?: string
           wallet_id?: string
         }
