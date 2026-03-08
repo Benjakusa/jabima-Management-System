@@ -220,6 +220,120 @@ export type Database = {
         }
         Relationships: []
       }
+      material_requests: {
+        Row: {
+          created_at: string
+          fulfilled_at: string | null
+          fulfilled_by: string | null
+          id: string
+          material_id: string
+          notes: string | null
+          priority: string
+          production_order_id: string
+          quantity_requested: number
+          stage: string
+          status: string
+          worker_id: string
+        }
+        Insert: {
+          created_at?: string
+          fulfilled_at?: string | null
+          fulfilled_by?: string | null
+          id?: string
+          material_id: string
+          notes?: string | null
+          priority?: string
+          production_order_id: string
+          quantity_requested: number
+          stage: string
+          status?: string
+          worker_id: string
+        }
+        Update: {
+          created_at?: string
+          fulfilled_at?: string | null
+          fulfilled_by?: string | null
+          id?: string
+          material_id?: string
+          notes?: string | null
+          priority?: string
+          production_order_id?: string
+          quantity_requested?: number
+          stage?: string
+          status?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_requests_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_materials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "material_requests_production_order_id_fkey"
+            columns: ["production_order_id"]
+            isOneToOne: false
+            referencedRelation: "production_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      material_returns: {
+        Row: {
+          created_at: string
+          id: string
+          inspected_at: string | null
+          inspected_by: string | null
+          material_id: string
+          production_order_id: string
+          quantity_returned: number
+          reason: string
+          status: string
+          worker_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inspected_at?: string | null
+          inspected_by?: string | null
+          material_id: string
+          production_order_id: string
+          quantity_returned: number
+          reason?: string
+          status?: string
+          worker_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inspected_at?: string | null
+          inspected_by?: string | null
+          material_id?: string
+          production_order_id?: string
+          quantity_returned?: number
+          reason?: string
+          status?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_returns_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_materials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "material_returns_production_order_id_fkey"
+            columns: ["production_order_id"]
+            isOneToOne: false
+            referencedRelation: "production_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_configs: {
         Row: {
           amount: number
@@ -307,10 +421,12 @@ export type Database = {
           current_stage: Database["public"]["Enums"]["production_stage"]
           expected_completion_date: string | null
           id: string
+          material_type: string
           notes: string | null
           product_code: string | null
           product_type: string
           production_cost: number | null
+          size: string
           started_at: string
           status: Database["public"]["Enums"]["product_status"]
         }
@@ -322,10 +438,12 @@ export type Database = {
           current_stage?: Database["public"]["Enums"]["production_stage"]
           expected_completion_date?: string | null
           id?: string
+          material_type?: string
           notes?: string | null
           product_code?: string | null
           product_type: string
           production_cost?: number | null
+          size?: string
           started_at?: string
           status?: Database["public"]["Enums"]["product_status"]
         }
@@ -337,10 +455,12 @@ export type Database = {
           current_stage?: Database["public"]["Enums"]["production_stage"]
           expected_completion_date?: string | null
           id?: string
+          material_type?: string
           notes?: string | null
           product_code?: string | null
           product_type?: string
           production_cost?: number | null
+          size?: string
           started_at?: string
           status?: Database["public"]["Enums"]["product_status"]
         }
@@ -729,10 +849,12 @@ export type Database = {
           current_stage: Database["public"]["Enums"]["production_stage"]
           expected_completion_date: string | null
           id: string
+          material_type: string
           notes: string | null
           product_code: string | null
           product_type: string
           production_cost: number | null
+          size: string
           started_at: string
           status: Database["public"]["Enums"]["product_status"]
         }[]
