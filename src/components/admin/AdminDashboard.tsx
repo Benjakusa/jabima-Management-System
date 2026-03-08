@@ -8,7 +8,7 @@ import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
-  DollarSign, Clock, TrendingUp, AlertTriangle
+  DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -129,6 +129,9 @@ const AdminDashboard = () => {
           icon={<Clock className="h-5 w-5" />}
         />
       </div>
+
+      {/* Recently Completed Orders */}
+      <RecentlyCompletedOrders />
 
       {/* Missing Daily Reports Alert */}
       <MissingReportsAlert />
