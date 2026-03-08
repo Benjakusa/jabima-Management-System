@@ -9,6 +9,7 @@ import WalletManagement from '@/components/wallet/WalletManagement';
 import ReportsManagement from '@/components/reports/ReportsManagement';
 import ExpenseManagement from '@/components/expenses/ExpenseManagement';
 import SettingsManagement from '@/components/settings/SettingsManagement';
+import DailyReportsOverview from '@/components/admin/DailyReportsOverview';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -31,6 +32,8 @@ const AdminPage = () => {
         return <ReportsManagement />;
       case 'expenses':
         return <ExpenseManagement />;
+      case 'daily-reports':
+        return <DailyReportsOverview />;
       case 'settings':
         return <SettingsManagement />;
       default:
