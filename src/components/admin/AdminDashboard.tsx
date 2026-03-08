@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
 import ExpenseCharts from './ExpenseCharts';
+import ProfitMarginWidget from './ProfitMarginWidget';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
   DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
@@ -141,6 +142,7 @@ const AdminDashboard = () => {
       <div>
         <h3 className="font-display text-lg font-semibold text-foreground mb-3">Analytics</h3>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ProfitMarginWidget />
           <ProductionChart />
           <RevenueChart />
           <ExpenseCharts />
