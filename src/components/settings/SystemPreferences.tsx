@@ -107,7 +107,7 @@ const SystemPreferences = () => {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Platform</span>
-            <span className="font-medium text-foreground">Lovable Cloud</span>
+            <span className="font-medium text-foreground">Opendesk Cloud</span>
           </div>
         </CardContent>
       </Card>

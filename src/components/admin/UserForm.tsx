@@ -37,8 +37,41 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
   });
   const { toast } = useToast();
 
+  // Helper: extract the real error message from a supabase.functions.invoke result.
+  // The SDK wraps non-2xx responses in FunctionsHttpError whose .message is always
+  // the generic "Edge Function returned a non-2xx status code". The actual body
+  // (e.g. {"error":"Unauthorized"}) lives in error.context (a Response object).
+  const extractFnError = async (res: { data: any; error: any }) => {
+    if (!res.error) return null;
+    // Try to read the body from the Response stored in .context
+    try {
+      const response: Response | undefined = res.error?.context;
+      if (response) {
+        const body = await response.json();
+        if (body?.error) return body.error;
+        if (body?.message) return body.message;
+      }
+    } catch {
+      // response already consumed or not JSON
+    }
+    // Fallback
+    return res.error.message || 'Unknown edge function error';
+  };
+
   const mutation = useMutation({
     mutationFn: async () => {
+      // Force-refresh the session so the edge function gets a fresh JWT.
+      // refreshSession() contacts Supabase auth and gets a new access_token.
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr || !refreshed.session) {
+        await supabase.auth.signOut();
+        throw new Error('Your session has expired. Please log in again.');
+      }
+
+      const headers = {
+        Authorization: `Bearer ${refreshed.session.access_token}`
+      };
+
       if (isEdit) {
         const body: any = { action: 'update', user_id: editUser.user_id };
         if (form.full_name !== editUser.full_name) body.full_name = form.full_name;
@@ -47,11 +80,13 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
         if (form.role && form.role !== editUser.role) body.role = form.role;
         if (form.branch_id !== (editUser.branch_id || '')) body.branch_id = form.branch_id || null;
         if (form.password) body.password = form.password;
-        const res = await supabase.functions.invoke('manage-user', { body });
-        if (res.error) throw new Error(res.error.message);
-        if (res.data?.error) throw new Error(res.data.error);
+
+        const res = await supabase.functions.invoke('manage-user', { body, headers });
+        const fnErr = await extractFnError(res);
+        if (fnErr) throw new Error(fnErr);
       } else {
         if (!form.role || !form.password) throw new Error('Role and password are required');
+
         const res = await supabase.functions.invoke('create-user', {
           body: {
             email: form.email,
@@ -60,9 +95,13 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
             phone: form.phone || undefined,
             role: form.role,
           },
+          headers,
         });
-        if (res.error) throw new Error(res.error.message);
+        const fnErr = await extractFnError(res);
+        if (fnErr) throw new Error(fnErr);
+        // res.data contains the success: true from the function
         if (res.data?.error) throw new Error(res.data.error);
+
         // Update branch if selected
         if (form.branch_id && res.data?.user_id) {
           await supabase.from('profiles').update({ branch_id: form.branch_id } as any).eq('user_id', res.data.user_id);
@@ -74,9 +113,15 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
       onSuccess();
     },
     onError: (err: Error) => {
-      const msg = err.message.includes('already been registered')
-        ? 'A user with this email already exists. Please use a different email.'
-        : err.message;
+      console.error('Edge Function Error:', err);
+      let msg = err.message;
+      if (msg.includes('already been registered')) {
+        msg = 'A user with this email already exists. Please use a different email.';
+      } else if (msg.toLowerCase().includes('unauthorized') || msg.includes('401')) {
+        msg = 'Session invalid or unauthorized. Please log out, clear your browser data, and log back in.';
+      } else if (msg.includes('Only admins')) {
+        msg = 'Permission Denied: Your account does not have the "admin" role in the database.';
+      }
       toast({ variant: 'destructive', title: 'Error', description: msg });
     },
   });

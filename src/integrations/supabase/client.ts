@@ -13,5 +13,20 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
+  }
+});
+
+// Handle auth state changes globally to catch expired sessions early.
+// When the token cannot be refreshed, the Supabase client sends requests
+// without valid auth, causing the gateway to return errors without CORS
+// headers — which the browser misreports as a CORS policy violation.
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED') {
+    console.log('[Auth] Token refreshed successfully');
+  }
+  if (event === 'SIGNED_OUT') {
+    console.warn('[Auth] Session ended. Clearing local data.');
+    localStorage.removeItem('sb-' + SUPABASE_URL.split('//')[1]?.split('.')[0] + '-auth-token');
   }
 });
