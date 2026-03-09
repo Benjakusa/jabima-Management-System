@@ -58,20 +58,35 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
     return res.error.message || 'Unknown edge function error';
   };
 
+  const invokeFn = async (fnName: string, body: any) => {
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr || !refreshed.session) {
+      await supabase.auth.signOut();
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+    const resp = await fetch(`${supabaseUrl}/functions/v1/${fnName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${refreshed.session.access_token}`,
+        'apikey': anonKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      throw new Error(data.error || `Function returned ${resp.status}`);
+    }
+    return data;
+  };
+
   const mutation = useMutation({
     mutationFn: async () => {
-      // Force-refresh the session so the edge function gets a fresh JWT.
-      // refreshSession() contacts Supabase auth and gets a new access_token.
-      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-      if (refreshErr || !refreshed.session) {
-        await supabase.auth.signOut();
-        throw new Error('Your session has expired. Please log in again.');
-      }
-
-      const headers = {
-        Authorization: `Bearer ${refreshed.session.access_token}`
-      };
-
       if (isEdit) {
         const body: any = { action: 'update', user_id: editUser.user_id };
         if (form.full_name !== editUser.full_name) body.full_name = form.full_name;
@@ -81,30 +96,21 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
         if (form.branch_id !== (editUser.branch_id || '')) body.branch_id = form.branch_id || null;
         if (form.password) body.password = form.password;
 
-        const res = await supabase.functions.invoke('manage-user', { body, headers });
-        const fnErr = await extractFnError(res);
-        if (fnErr) throw new Error(fnErr);
+        await invokeFn('manage-user', body);
       } else {
         if (!form.role || !form.password) throw new Error('Role and password are required');
 
-        const res = await supabase.functions.invoke('create-user', {
-          body: {
-            email: form.email,
-            password: form.password,
-            full_name: form.full_name,
-            phone: form.phone || undefined,
-            role: form.role,
-          },
-          headers,
+        const data = await invokeFn('create-user', {
+          email: form.email,
+          password: form.password,
+          full_name: form.full_name,
+          phone: form.phone || undefined,
+          role: form.role,
         });
-        const fnErr = await extractFnError(res);
-        if (fnErr) throw new Error(fnErr);
-        // res.data contains the success: true from the function
-        if (res.data?.error) throw new Error(res.data.error);
 
         // Update branch if selected
-        if (form.branch_id && res.data?.user_id) {
-          await supabase.from('profiles').update({ branch_id: form.branch_id } as any).eq('user_id', res.data.user_id);
+        if (form.branch_id && data?.user_id) {
+          await supabase.from('profiles').update({ branch_id: form.branch_id } as any).eq('user_id', data.user_id);
         }
       }
     },
