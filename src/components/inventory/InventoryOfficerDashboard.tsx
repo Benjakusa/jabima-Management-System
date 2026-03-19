@@ -12,22 +12,28 @@ import InventoryReturnProcessing from './InventoryReturnProcessing';
 import WorkshopWallet from '@/components/worker/WorkshopWallet';
 import DailyReportForm from '@/components/worker/DailyReportForm';
 import DailyReportReminder from '@/components/worker/DailyReportReminder';
+import FinishedProductsList from './FinishedProductsList';
+import ProductRequestProcessing from './ProductRequestProcessing';
+import ProductReturnProcessing from './ProductReturnProcessing';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'materials' | 'equipment' | 'suppliers' | 'alerts' | 'requests' | 'returns' | 'wallet' | 'report';
+type Tab = 'overview' | 'materials' | 'finished' | 'equipment' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'wallet' | 'report';
 
 const tabs: { id: Tab; label: string; icon: typeof Package }[] = [
   { id: 'overview', label: 'Home', icon: LayoutDashboard },
   { id: 'materials', label: 'Materials', icon: Package },
+  { id: 'finished', label: 'Finished', icon: Package },
   { id: 'equipment', label: 'Services', icon: Wrench },
-  { id: 'requests', label: 'Requests', icon: ClipboardList },
-  { id: 'returns', label: 'Returns', icon: RotateCcw },
-  { id: 'wallet', label: 'Wallet', icon: Wallet },
+  { id: 'requests', label: 'Material Req', icon: ClipboardList },
+  { id: 'returns', label: 'Material Ret', icon: RotateCcw },
 ];
 
 const secondaryTabs: { id: Tab; label: string; icon: typeof Package }[] = [
+  { id: 'product_requests', label: 'Product Requests', icon: ClipboardList },
+  { id: 'product_returns', label: 'Product Returns', icon: RotateCcw },
   { id: 'suppliers', label: 'Suppliers', icon: Users },
   { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
+  { id: 'wallet', label: 'Wallet', icon: Wallet },
   { id: 'report', label: 'Report', icon: FileText },
 ];
 
@@ -69,6 +75,7 @@ const InventoryOfficerDashboard = () => {
 
         {activeTab === 'overview' && <InventoryOverview />}
         {activeTab === 'materials' && <RawMaterialsList />}
+        {activeTab === 'finished' && <FinishedProductsList />}
         {activeTab === 'equipment' && <ServiceEquipmentList />}
         {activeTab === 'suppliers' && <SuppliersList />}
         {activeTab === 'alerts' && <StockAlerts />}
@@ -79,11 +86,25 @@ const InventoryOfficerDashboard = () => {
             <InventoryRequestProcessing />
           </div>
         )}
+        {activeTab === 'product_requests' && (
+          <div>
+            <h2 className="font-display text-lg font-bold text-foreground mb-1">Product Requests</h2>
+            <p className="text-xs text-muted-foreground mb-4">Process product requests from sales agents</p>
+            <ProductRequestProcessing />
+          </div>
+        )}
         {activeTab === 'returns' && (
           <div>
             <h2 className="font-display text-lg font-bold text-foreground mb-1">Material Returns</h2>
             <p className="text-xs text-muted-foreground mb-4">Inspect and process returned materials</p>
             <InventoryReturnProcessing />
+          </div>
+        )}
+        {activeTab === 'product_returns' && (
+          <div>
+            <h2 className="font-display text-lg font-bold text-foreground mb-1">Product Returns</h2>
+            <p className="text-xs text-muted-foreground mb-4">Process product returns from sales agents</p>
+            <ProductReturnProcessing />
           </div>
         )}
         {activeTab === 'wallet' && <WorkshopWallet />}

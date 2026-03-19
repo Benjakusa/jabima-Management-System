@@ -24,7 +24,7 @@ const emptyForm: MaterialForm = {
 };
 
 const categories = ['Wood', 'Fabric', 'Hardware', 'Paint', 'Glass', 'Adhesive', 'Metal', 'Other'];
-const units = ['pieces', 'sheets', 'meters', 'liters', 'kg', 'rolls', 'boxes', 'pairs'];
+const units = ['pieces', 'sheets', 'meters', 'feet', 'liters', 'kg', 'rolls', 'boxes', 'pairs'];
 
 const RawMaterialsList = () => {
   const [showForm, setShowForm] = useState(false);

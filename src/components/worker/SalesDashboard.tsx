@@ -18,9 +18,11 @@ import SaleReceipt from '@/components/sales/SaleReceipt';
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
 
-const SERVICE_TYPES = ['Hearse', 'Gazebo', 'Lowering Gear', 'Tents', 'Body Preservation', 'Body Transport', 'Funeral Arrangement', 'Other'];
+import ProductRequests from './ProductRequests';
+import ProductReturns from './ProductReturns';
+import ServiceManagement from './ServiceManagement';
 
-type View = 'home' | 'product' | 'service' | 'receipt' | 'wallet' | 'report' | 'log';
+type View = 'home' | 'product' | 'service' | 'receipt' | 'wallet' | 'report' | 'log' | 'requests' | 'returns' | 'my_services';
 
 const SalesDashboard = () => {
   const { user, profile, signOut } = useAuth();
@@ -49,11 +51,16 @@ const SalesDashboard = () => {
   });
 
   const { data: finishedProducts } = useQuery({
-    queryKey: ['available-products'],
+    queryKey: ['available-products', profile?.branch_id],
     queryFn: async () => {
-      const { data } = await supabase.from('finished_products').select('id, product_type, production_cost, completed_at').eq('status', 'completed');
+      let query = supabase.from('finished_products').select('id, product_type, production_cost, completed_at, branch_id').eq('status', 'completed');
+      if (profile?.branch_id) {
+        query = query.eq('branch_id', profile.branch_id);
+      }
+      const { data } = await query;
       return data || [];
     },
+    enabled: !!profile,
   });
 
   const { data: branches } = useQuery({
@@ -62,6 +69,20 @@ const SalesDashboard = () => {
       const { data } = await supabase.from('branches').select('id, name').order('name');
       return data || [];
     },
+  });
+
+  const { data: myServices } = useQuery({
+    queryKey: ['my-available-services', user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sales_agent_services' as any)
+        .select('*')
+        .eq('sales_officer_id', user!.id)
+        .eq('is_active', true);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
   });
 
   const { data: myWallet } = useQuery({
@@ -184,9 +205,15 @@ const SalesDashboard = () => {
 
   const navItems = [
     { id: 'home' as View, label: 'Home', icon: LayoutDashboard },
-    { id: 'product' as View, label: 'Product', icon: ShoppingCart },
+    { id: 'product' as View, label: 'POS', icon: ShoppingCart },
     { id: 'service' as View, label: 'Service', icon: Briefcase },
-    { id: 'log' as View, label: 'Sales Log', icon: FileText },
+    { id: 'requests' as View, label: 'Req', icon: ClipboardList },
+    { id: 'returns' as View, label: 'Ret', icon: RotateCcw },
+    { id: 'my_services' as View, label: 'Setup', icon: Briefcase },
+  ];
+
+  const secondaryNavItems = [
+    { id: 'log' as View, label: 'Log', icon: FileText },
     { id: 'wallet' as View, label: 'Wallet', icon: Wallet },
     { id: 'report' as View, label: 'Report', icon: FileText },
   ];
@@ -309,7 +336,7 @@ const SalesDashboard = () => {
                     <div><Label className="text-xs">Customer Name *</Label><Input value={pForm.customer_name} onChange={e => setPForm(f => ({ ...f, customer_name: e.target.value }))} className="h-10 text-sm" required /></div>
                     <div><Label className="text-xs">Phone</Label><Input value={pForm.customer_phone} onChange={e => setPForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
                     <div><Label className="text-xs">Selling Price (Ksh) *</Label><Input type="number" value={pForm.selling_price} onChange={e => setPForm(f => ({ ...f, selling_price: e.target.value }))} className="h-10 text-sm" required /></div>
-                    <div><Label className="text-xs">MPESA Code *</Label><Input value={pForm.mpesa_code} onChange={e => setPForm(f => ({ ...f, mpesa_code: e.target.value }))} className="h-10 text-sm uppercase" required /></div>
+                    <div><Label className="text-xs">MPESA Code *</Label><Input value={pForm.mpesa_code} onChange={e => setPForm(f => ({ ...f, mpesa_code: e.target.value.toUpperCase() }))} className="h-10 text-sm uppercase" required /></div>
                   </div>
                   <div><Label className="text-xs">Branch</Label>
                     <select value={pForm.branch_id} onChange={e => setPForm(f => ({ ...f, branch_id: e.target.value }))} className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
@@ -338,12 +365,20 @@ const SalesDashboard = () => {
                   <div className="space-y-2">
                     <Label className="text-xs">Service Type *</Label>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {SERVICE_TYPES.map(s => (
-                        <button key={s} type="button" onClick={() => setSForm(f => ({ ...f, service_name: s }))}
-                          className={cn("px-3 py-2 rounded-lg text-xs border font-medium transition-colors", sForm.service_name === s ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent")}>
-                          {s}
+                      {(myServices || []).map((s: any) => (
+                        <button key={s.service_name} type="button" onClick={() => setSForm(f => ({ ...f, service_name: s.service_name }))}
+                          className={cn("px-3 py-2 rounded-lg text-xs border font-medium transition-colors text-center", sForm.service_name === s.service_name ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent")}>
+                          {s.service_name}
                         </button>
                       ))}
+                      {(myServices || []).length === 0 && (
+                        <div className="col-span-2 p-4 text-center border border-dashed rounded-xl">
+                          <p className="text-[10px] text-muted-foreground mb-2">No services active</p>
+                          <Button size="sm" variant="outline" className="h-7 text-[9px]" onClick={() => setActiveView('my_services')}>
+                            Setup My Services
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {/* Booking details */}
@@ -374,6 +409,11 @@ const SalesDashboard = () => {
             </Card>
           </div>
         )}
+        
+        {/* NEW VIEWS */}
+        {activeView === 'requests' && <ProductRequests />}
+        {activeView === 'returns' && <ProductReturns />}
+        {activeView === 'my_services' && <ServiceManagement />}
 
         {/* DAILY SALES LOG */}
         {activeView === 'log' && (

@@ -14,9 +14,10 @@ import { cn } from '@/lib/utils';
 import { STAGES } from './ProductionPipeline';
 
 const productTypes = [
-  'Standard Coffin', 'Executive Coffin', 'Premium Casket',
-  'Deluxe Coffin', 'Child Coffin',
-  'Casket - Flat Top', 'Casket - Half Couch', 'Casket - Full Couch',
+  'Simple', 'Half glass', 'High roof',
+  'Executive', 'Dumu', 'Saitoti',
+  'Dragon', 'Tommy', 'Reagan',
+  'English coffin', 'Kupa',
   'Custom Order',
 ];
 
