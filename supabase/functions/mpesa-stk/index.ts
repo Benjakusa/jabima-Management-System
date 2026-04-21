@@ -5,25 +5,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const IS_PRODUCTION = Deno.env.get("MPESA_ENV") === "production";
-const CONSUMER_KEY = Deno.env.get("MPESA_CONSUMER_KEY") || "WQgxiuwiAxhKTrGhn6QIKSxjnjqa3AROBqwTKpB0guYjUbEG";
-const CONSUMER_SECRET = Deno.env.get("MPESA_CONSUMER_SECRET") || "GpmOG0jqS8CgWl5UY3mWtNNWHJO8UGBcuA3jy9gF8ySX2Q1YouubJt9ph2ABX7FX";
-const SHORT_CODE = Deno.env.get("MPESA_SHORT_CODE") || "174379";
-const PASSKEY = Deno.env.get("MPESA_PASSKEY") || "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72e1f246cc843";
-const MPESA_CALLBACK_URL = Deno.env.get("MPESA_CALLBACK_URL") || "https://zuyiebfkrjbwwrbdcoxd.supabase.co/functions/v1/mpesa-callback";
-
-const BASE_URL = IS_PRODUCTION
-  ? "https://api.safaricom.co.ke"
-  : "https://sandbox.safaricom.co.ke";
-
 function base64Encode(str: string): string {
   return btoa(str);
 }
 
-async function getAccessToken(): Promise<string> {
-  const auth = base64Encode(`${CONSUMER_KEY}:${CONSUMER_SECRET}`);
+async function getAccessToken(consumerKey: string, consumerSecret: string, baseUrl: string): Promise<string> {
+  const auth = base64Encode(`${consumerKey}:${consumerSecret}`);
 
-  const response = await fetch(`${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
+  const response = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
     headers: {
       "Authorization": `Basic ${auth}`,
       "Content-Type": "application/json",
@@ -31,10 +20,8 @@ async function getAccessToken(): Promise<string> {
   });
 
   const text = await response.text();
-  console.log("Access Token Response:", text);
-
   if (!response.ok) {
-    throw new Error(`Access token request failed: ${response.status} - ${text}`);
+    throw new Error(`Auth fail: ${response.status} - ${text}`);
   }
 
   const data = JSON.parse(text);
@@ -55,12 +42,11 @@ function getTimestamp(): string {
   return `${year}${month}${day}${hours}${minutes}${seconds}`;
 }
 
-function getSTKPassword(timestamp: string): string {
-  const data = `${SHORT_CODE}${PASSKEY}${timestamp}`;
+function getSTKPassword(shortCode: string, passKey: string, timestamp: string): string {
+  const data = `${shortCode}${passKey}${timestamp}`;
   return base64Encode(data);
 }
 
-/** Normalize phone to 254XXXXXXXXX (10 or 12 digits accepted) */
 function normalizePhone(phone: string): string {
   const cleaned = phone.replace(/\D/g, "");
   if (cleaned.startsWith("0") && cleaned.length === 10) {
@@ -72,7 +58,7 @@ function normalizePhone(phone: string): string {
   if (cleaned.startsWith("7") && cleaned.length === 9) {
     return "254" + cleaned;
   }
-  return cleaned; // return as-is, Daraja will reject it if wrong
+  return cleaned;
 }
 
 serve(async (req) => {
@@ -81,6 +67,14 @@ serve(async (req) => {
   }
 
   try {
+    const CONSUMER_KEY = "WQgxiuwiAxhKTrGhn6QIKSxjnjqa3AROBqwTKpB0guYjUbEG";
+    const CONSUMER_SECRET = "GpmOG0jqS8CgWl5UY3mWtNNWHJO8UGBcuA3jy9gF8ySX2Q1YouubJt9ph2ABX7FX";
+    const SHORT_CODE = "174379";
+    const PASSKEY = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
+    const MPESA_CALLBACK_URL = "https://zuyiebfkrjbwwrbdcoxd.supabase.co/functions/v1/mpesa-callback";
+
+    const BASE_URL = "https://sandbox.safaricom.co.ke";
+
     const body = await req.json();
     const { phone, amount, accountReference = "JABIMA", transactionDesc = "Payment" } = body;
 
@@ -94,11 +88,9 @@ serve(async (req) => {
     const normalizedPhone = normalizePhone(String(phone));
     const amountInt = Math.ceil(parseFloat(String(amount)));
 
-    console.log(`STK Push → phone: ${normalizedPhone}, amount: ${amountInt}`);
-
-    const accessToken = await getAccessToken();
+    const accessToken = await getAccessToken(CONSUMER_KEY, CONSUMER_SECRET, BASE_URL);
     const timestamp = getTimestamp();
-    const password = getSTKPassword(timestamp);
+    const password = getSTKPassword(SHORT_CODE, PASSKEY, timestamp);
 
     const stkPayload = {
       BusinessShortCode: SHORT_CODE,
@@ -123,23 +115,27 @@ serve(async (req) => {
       body: JSON.stringify(stkPayload),
     });
 
-    const stkText = await stkResponse.text();
-    console.log("STK Push Response:", stkText);
+    console.log("STK Payload sent:", JSON.stringify(stkPayload));
 
+    const stkText = await stkResponse.text();
     if (!stkResponse.ok) {
-      throw new Error(`STK Push request failed: ${stkResponse.status} - ${stkText}`);
+      return new Response(
+        JSON.stringify({ error: `STK Push Failed: ${stkResponse.status}`, details: stkText }),
+        { status: stkResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    const stkData = JSON.parse(stkText);
-
-    return new Response(JSON.stringify(stkData), {
+    return new Response(stkText, {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("mpesa-stk error:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      JSON.stringify({
+        error: "Internal Server Error",
+        message: err instanceof Error ? err.message : String(err)
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

@@ -185,9 +185,6 @@ const SalesDashboard = () => {
         customer_phone: pForm.customer_phone.trim() || null,
         selling_price: sellingPrice,
         mpesa_code: paymentMethod === 'cash' ? `CASH-${Date.now().toString().slice(-6)}` : pForm.mpesa_code.trim().toUpperCase(),
-        payment_method: paymentMethod,
-        amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : sellingPrice,
-        change_given: paymentMethod === 'cash' ? parseFloat(amountReceived) - sellingPrice : 0,
         sales_officer_id: user!.id,
         branch_id: pForm.branch_id || profile?.branch_id || null,
       } as any).select().single();
@@ -239,9 +236,6 @@ const SalesDashboard = () => {
         customer_phone: sForm.customer_phone.trim() || null,
         amount: amount,
         mpesa_code: paymentMethod === 'cash' ? `CASH-${Date.now().toString().slice(-6)}` : sForm.mpesa_code.trim().toUpperCase(),
-        payment_method: paymentMethod,
-        amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : amount,
-        change_given: paymentMethod === 'cash' ? parseFloat(amountReceived) - amount : 0,
         description: fullDesc || null,
         sales_officer_id: user!.id,
         branch_id: sForm.branch_id || profile?.branch_id || null,
@@ -279,8 +273,11 @@ const SalesDashboard = () => {
       console.log('M-Pesa response:', { data, error, status });
 
       if (error) {
-        console.error('M-Pesa invoke error:', error);
-        throw new Error(error.message || `Function error: ${status}`);
+        console.error('M-Pesa invoke error details:', error);
+        // Supabase FunctionsHttpError usually includes the response body in the 'context' or 'details' depending on version
+        // We'll throw a more descriptive error if we can find one
+        const bodyError = (error as any).data?.message || (error as any).data?.error || error.message;
+        throw new Error(bodyError || `Function error: ${status}`);
       }
 
       if (data?.ResponseCode === "0") {
@@ -293,7 +290,7 @@ const SalesDashboard = () => {
       }
     } catch (err: any) {
       console.error('M-Pesa Error:', err);
-      const errorMsg = err?.data?.error || err?.message || err?.toString() || 'Unknown error';
+      const errorMsg = err?.data?.message || err?.data?.details || err?.data?.error || err?.message || err?.toString() || 'Unknown error';
       toast({ variant: 'destructive', title: 'M-Pesa Error', description: errorMsg });
     } finally {
       setIsMpesaProcessing(false);
