@@ -55,7 +55,7 @@ const SalesDashboard = () => {
     queryKey: ['available-products', profile?.branch_id],
     queryFn: async () => {
       const branchId = profile?.branch_id;
-      
+
       let query = supabase
         .from('finished_products')
         .select('id, product_type, production_cost, completed_at, branch_id, batch_number')
@@ -73,7 +73,7 @@ const SalesDashboard = () => {
         console.error('Error loading products:', error);
         throw error;
       }
-      
+
       // Get shop_inventory IDs for these products
       if (data && data.length > 0) {
         const productIds = data.map(p => p.id);
@@ -81,15 +81,15 @@ const SalesDashboard = () => {
           .from('shop_inventory')
           .select('id, finished_product_id')
           .in('finished_product_id', productIds);
-        
+
         const shopMap = new Map((shopData || []).map(s => [s.finished_product_id, s.id]));
-        
+
         return data.map((p: any) => ({
           ...p,
           shop_inventory_id: shopMap.get(p.id)
         }));
       }
-      
+
       return data || [];
     },
     enabled: !!profile,
@@ -267,7 +267,7 @@ const SalesDashboard = () => {
     toast({ title: 'Sending STK Push...', description: `Check phone ${phone}` });
 
     try {
-      const { data, error } = await supabase.functions.invoke('mpesa-stk', {
+      const { data, error, status } = await supabase.functions.invoke('mpesa-stk', {
         body: {
           phone,
           amount,
@@ -276,19 +276,25 @@ const SalesDashboard = () => {
         },
       });
 
-      if (error) throw error;
+      console.log('M-Pesa response:', { data, error, status });
 
-      if (data?.success) {
-        toast({ 
-          title: 'STK Push Sent!', 
-          description: `Check your phone for payment prompt. Checkout ID: ${data.checkoutRequestID}` 
+      if (error) {
+        console.error('M-Pesa invoke error:', error);
+        throw new Error(error.message || `Function error: ${status}`);
+      }
+
+      if (data?.ResponseCode === "0") {
+        toast({
+          title: 'STK Push Sent!',
+          description: `Check your phone for payment prompt. Checkout ID: ${data.CheckoutRequestID}`
         });
       } else {
-        throw new Error(data?.error || 'Failed to send STK Push');
+        throw new Error(data?.error || data?.message || 'Failed to send STK Push');
       }
     } catch (err: any) {
       console.error('M-Pesa Error:', err);
-      toast({ variant: 'destructive', title: 'M-Pesa Error', description: err.message });
+      const errorMsg = err?.data?.error || err?.message || err?.toString() || 'Unknown error';
+      toast({ variant: 'destructive', title: 'M-Pesa Error', description: errorMsg });
     } finally {
       setIsMpesaProcessing(false);
     }
