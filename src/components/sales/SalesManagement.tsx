@@ -3,8 +3,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import SalesOverview from '@/components/sales/SalesOverview';
 import ProductSalesList from '@/components/sales/ProductSalesList';
 import ServiceSalesList from '@/components/sales/ServiceSalesList';
+import ServiceCatalogueManager from '@/components/sales/ServiceCatalogueManager';
 import SaleReceipt from '@/components/sales/SaleReceipt';
-import { LayoutDashboard, ShoppingCart, Briefcase, Receipt } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Briefcase, Receipt, List } from 'lucide-react';
 
 const SalesManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -38,6 +39,10 @@ const SalesManagement = () => {
             <Briefcase className="h-4 w-4 shrink-0" />
             <span className="truncate">Services</span>
           </TabsTrigger>
+          <TabsTrigger value="catalogue" className="flex-1 min-w-0 gap-1.5 py-2.5 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs sm:text-sm">
+            <List className="h-4 w-4 shrink-0" />
+            <span className="truncate">Catalogue</span>
+          </TabsTrigger>
           {receiptSaleId && (
             <TabsTrigger value="receipt" className="flex-1 min-w-0 gap-1.5 py-2.5 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs sm:text-sm">
               <Receipt className="h-4 w-4 shrink-0" />
@@ -49,6 +54,7 @@ const SalesManagement = () => {
         <TabsContent value="overview" className="mt-4"><SalesOverview /></TabsContent>
         <TabsContent value="products" className="mt-4"><ProductSalesList onViewReceipt={(id) => handleViewReceipt(id, 'product')} /></TabsContent>
         <TabsContent value="services" className="mt-4"><ServiceSalesList onViewReceipt={(id) => handleViewReceipt(id, 'service')} /></TabsContent>
+        <TabsContent value="catalogue" className="mt-4"><ServiceCatalogueManager /></TabsContent>
         {receiptSaleId && (
           <TabsContent value="receipt" className="mt-4">
             <SaleReceipt saleId={receiptSaleId} type={receiptType} />

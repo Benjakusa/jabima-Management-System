@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { FileText, Calendar, Search, CheckCircle, AlertCircle } from 'lucide-react';
+import { FileText, Calendar, Search, CheckCircle, AlertCircle, Check } from 'lucide-react';
 
 const DailyReportsOverview = () => {
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
@@ -145,6 +145,21 @@ const DailyReportsOverview = () => {
                       <Badge variant="secondary" className="text-[10px]">{report.tasks_completed} tasks</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mb-1">{getProfileEmail(report.user_id)}</p>
+                    {report.completed_tasks && report.completed_tasks.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-[10px] text-muted-foreground font-medium">Completed Tasks:</p>
+                        <div className="space-y-1 bg-accent/20 rounded-lg p-2 max-h-[120px] overflow-y-auto">
+                          {report.completed_tasks.map((task: any, i: number) => (
+                            <div key={i} className="flex items-center gap-2 text-xs">
+                              <Check className="h-3 w-3 text-green-500 shrink-0" />
+                              <span className="font-medium">{task.product}</span>
+                              <Badge variant="outline" className="text-[10px] shrink-0">{task.batch}</Badge>
+                              <span className="text-muted-foreground text-[10px] shrink-0">{task.stage}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {report.summary && (
                       <p className="text-sm text-foreground bg-accent/30 rounded-lg p-3 mt-2">{report.summary}</p>
                     )}

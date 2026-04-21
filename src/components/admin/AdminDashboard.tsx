@@ -12,6 +12,7 @@ import {
   Package, Factory, CheckCircle, ShoppingCart,
   DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface DashboardStats {
   totalMaterialsValue: number;
@@ -69,8 +70,6 @@ const AdminDashboard = () => {
 
     fetchStats();
   }, []);
-
-  const formatCurrency = (val: number) => `Ksh ${val.toLocaleString()}`;
 
   if (loading) {
     return (
@@ -229,8 +228,6 @@ const RecentlyCompletedOrders = () => {
   });
 
   if (!recentCompleted || recentCompleted.length === 0) return null;
-
-  const formatCurrency = (val: number) => `Ksh ${val.toLocaleString()}`;
 
   return (
     <Card className="border border-success/30 bg-success/5">

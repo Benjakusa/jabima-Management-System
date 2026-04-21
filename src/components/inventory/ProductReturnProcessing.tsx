@@ -21,7 +21,7 @@ const ProductReturnProcessing = () => {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('product_returns')
-                .select('*, finished_products(product_type, id), profiles:sales_officer_id(full_name)')
+                .select('*, products(product_type, id), profiles:sales_officer_id(full_name)')
                 .eq('status', filter)
                 .order('created_at', { ascending: false });
             if (error) throw error;
@@ -45,14 +45,14 @@ const ProductReturnProcessing = () => {
             // Put product back in inventory (mark as completed/available)
             const { error: prodErr } = await supabase
                 .from('finished_products')
-                .update({ status: 'completed' as any })
+                .update({ status: 'completed' as const })
                 .eq('id', productId);
             if (prodErr) throw prodErr;
         },
         onSuccess: () => {
             toast({ title: 'Return processed' });
             queryClient.invalidateQueries({ queryKey: ['product-returns-officer'] });
-            queryClient.invalidateQueries({ queryKey: ['finished-products-list'] });
+            queryClient.invalidateQueries({ queryKey: ['finished-products'] });
         },
         onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
     });
@@ -108,7 +108,7 @@ const ProductReturnProcessing = () => {
                             <CardContent className="p-4 space-y-3">
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-foreground">{ret.finished_products?.product_type || 'Unknown Product'}</p>
+                                        <p className="font-medium text-foreground">{ret.products?.product_type || 'Unknown Product'}</p>
                                         <div className="text-[10px] text-muted-foreground space-y-0.5 mt-1">
                                             <p>Agent: {ret.profiles?.full_name || 'Unknown'}</p>
                                             <p>Product ID: {ret.finished_product_id.slice(0, 8)}</p>

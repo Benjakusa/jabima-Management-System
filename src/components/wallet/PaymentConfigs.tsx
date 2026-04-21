@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, X, Loader2, Settings, Trash2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatStage, formatCurrency } from '@/lib/utils';
 
 const PAYMENT_TYPES = [
   { value: 'daily_wage', label: 'Daily Wage' },
@@ -20,8 +20,6 @@ const STAGES = [
   'wood_cutting', 'frame_assembly', 'board_fitting', 'sanding', 'fabric_lining',
   'painting', 'handle_installation', 'glass_installation', 'final_assembly', 'quality_inspection',
 ] as const;
-
-const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 interface ConfigForm {
   user_id: string;
@@ -91,7 +89,6 @@ const PaymentConfigs = () => {
   });
 
   const getName = (uid: string) => profiles?.find(p => p.user_id === uid)?.full_name || 'Unknown';
-  const fmt = (v: number) => `Ksh ${v.toLocaleString()}`;
 
   return (
     <div className="space-y-4">
@@ -176,7 +173,7 @@ const PaymentConfigs = () => {
                       {PAYMENT_TYPES.find(t => t.value === c.payment_type)?.label || c.payment_type}
                     </span>
                     {c.stage && <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-md">{formatStage(c.stage)}</span>}
-                    <span className="text-xs font-bold text-success">{fmt(c.amount)}</span>
+                    <span className="text-xs font-bold text-success">{formatCurrency(c.amount)}</span>
                   </div>
                   {c.description && <p className="text-xs text-muted-foreground mt-1">{c.description}</p>}
                 </div>

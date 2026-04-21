@@ -6,10 +6,9 @@ import { Download, Printer } from 'lucide-react';
 import { exportCSV, printReport, fmt } from './reportUtils';
 import { DateRange, filterByDateRange } from './DateRangeFilter';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { formatStage, formatCurrency } from '@/lib/utils';
 
 const COLORS = ['hsl(var(--warning))', 'hsl(var(--success))', 'hsl(var(--primary))', 'hsl(var(--destructive))'];
-
-const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 interface Props { dateRange: DateRange; }
 
@@ -47,11 +46,11 @@ const ProductionReport = ({ dateRange }: Props) => {
 
   const handlePrint = () => {
     const rows = orders.map(o =>
-      `<tr><td>${o.product_type}</td><td>${o.status}</td><td>${formatStage(o.current_stage)}</td><td>${fmt(o.production_cost || 0)}</td><td>${new Date(o.started_at).toLocaleDateString()}</td></tr>`
+      `<tr><td>${o.product_type}</td><td>${o.status}</td><td>${formatStage(o.current_stage)}</td><td>${formatCurrency(o.production_cost || 0)}</td><td>${new Date(o.started_at).toLocaleDateString()}</td></tr>`
     ).join('');
     printReport('Production Report', `
       <table><thead><tr><th>Product</th><th>Status</th><th>Stage</th><th>Cost</th><th>Started</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td colspan="3">TOTAL COST</td><td>${fmt(totalCost)}</td><td></td></tr></tbody></table>
+      <tbody>${rows}<tr class="total-row"><td colspan="3">TOTAL COST</td><td>${formatCurrency(totalCost)}</td><td></td></tr></tbody></table>
     `);
   };
 

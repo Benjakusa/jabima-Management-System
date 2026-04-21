@@ -1,25 +1,45 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X, Pencil, Trash2, Loader2, Search, Package, MapPin } from 'lucide-react';
+import { Plus, X, Pencil, Trash2, Loader2, Search, Package, MapPin, ShoppingCart, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface FinishedProductForm {
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+type SourceMode = 'workshop' | 'external';
+
+interface WorkshopForm {
     product_type: string;
     production_cost: string;
     location: string;
     branch_id: string;
 }
 
-const emptyForm: FinishedProductForm = {
+interface ExternalForm {
+    product_type: string;
+    purchase_price: string;
+    supplier_name: string;
+    quantity: string;
+    location: string;
+    branch_id: string;
+    notes: string;
+}
+
+const emptyWorkshop: WorkshopForm = {
     product_type: '', production_cost: '0', location: 'main_warehouse', branch_id: '',
 };
+
+const emptyExternal: ExternalForm = {
+    product_type: '', purchase_price: '0', supplier_name: '', quantity: '1',
+    location: 'main_warehouse', branch_id: '', notes: '',
+};
+
+// ─── Coffin types ────────────────────────────────────────────────────────────
 
 const productTypes = [
     'Simple', 'Half glass', 'High roof',
@@ -29,23 +49,26 @@ const productTypes = [
     'Custom Order',
 ];
 
+// ─── Component ───────────────────────────────────────────────────────────────
+
 const FinishedProductsList = () => {
-    const { user } = useAuth();
     const [showForm, setShowForm] = useState(false);
+    const [mode, setMode] = useState<SourceMode>('external'); // default to external for new entries
     const [editId, setEditId] = useState<string | null>(null);
-    const [form, setForm] = useState<FinishedProductForm>(emptyForm);
+    const [workshopForm, setWorkshopForm] = useState<WorkshopForm>(emptyWorkshop);
+    const [externalForm, setExternalForm] = useState<ExternalForm>(emptyExternal);
     const [search, setSearch] = useState('');
     const [filterType, setFilterType] = useState('');
+    const [filterSource, setFilterSource] = useState<'' | 'workshop' | 'external'>('');
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
     const { data: products, isLoading } = useQuery({
-        queryKey: ['finished-products-list'],
+        queryKey: ['finished-products'],
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('finished_products')
-                .select('*, branches(name)')
-                .eq('status', 'completed')
+                .select('*, branches(name), production_orders(product_code, batch_number)')
                 .order('completed_at', { ascending: false });
             if (error) throw error;
             return data || [];
@@ -60,23 +83,67 @@ const FinishedProductsList = () => {
         },
     });
 
+    // ── Save mutation ──────────────────────────────────────────────────────
+
     const saveMutation = useMutation({
         mutationFn: async () => {
-            if (!user) throw new Error('Not authenticated');
-            const payload = {
-                p_product_type: form.product_type,
-                p_production_cost: parseFloat(form.production_cost) || 0,
-                p_location: form.location.trim() || 'main_warehouse',
-                p_branch_id: form.branch_id || null,
-                p_edit_id: editId || null,
-            };
-            const { error } = await (supabase as any).rpc('inventory_upsert_finished_product', payload);
-            if (error) throw error;
+            if (mode === 'external') {
+                const qty = parseInt(externalForm.quantity) || 1;
+                const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2);
+                const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
+                const baseBatch = `EXT-${dateStr}-${randomStr}`;
+                const rows = Array.from({ length: qty }, (_, i) => ({
+                    name: externalForm.product_type,
+                    product_type: externalForm.product_type,
+                    purchase_price: parseFloat(externalForm.purchase_price) || 0,
+                    production_cost: 0,
+                    supplier_name: externalForm.supplier_name.trim() || null,
+                    source_type: 'external' as const,
+                    branch_id: externalForm.branch_id || null,
+                    notes: externalForm.notes.trim() || null,
+                    status: 'completed' as const,
+                    completed_at: new Date().toISOString(),
+                    production_order_id: null,
+                    batch_number: qty === 1 ? baseBatch : `${baseBatch}-${i + 1}`,
+                }));
+
+                if (editId) {
+                    const { error } = await supabase.from('finished_products').update(rows[0]).eq('id', editId);
+                    if (error) throw error;
+                } else {
+                    const { error } = await supabase.from('finished_products').insert(rows);
+                    if (error) throw error;
+                }
+            } else {
+                const payload = {
+                    name: workshopForm.product_type,
+                    product_type: workshopForm.product_type,
+                    production_cost: parseFloat(workshopForm.production_cost) || 0,
+                    source_type: 'workshop' as const,
+                    branch_id: workshopForm.branch_id || null,
+                    status: 'completed' as const,
+                    completed_at: new Date().toISOString(),
+                    purchase_price: null,
+                    supplier_name: null,
+                    notes: null,
+                };
+                if (editId) {
+                    const { error } = await supabase.from('finished_products').update(payload).eq('id', editId);
+                    if (error) throw error;
+                } else {
+                    const { error } = await supabase.from('finished_products').insert(payload);
+                    if (error) throw error;
+                }
+            }
         },
         onSuccess: () => {
-            toast({ title: editId ? 'Product updated' : 'Product added to inventory' });
+            const qty = mode === 'external' ? parseInt(externalForm.quantity) || 1 : 1;
+            toast({
+                title: editId ? 'Product updated' : `${qty} coffin${qty !== 1 ? 's' : ''} added to inventory`,
+                description: mode === 'external' ? 'External stock recorded successfully.' : undefined,
+            });
             resetForm();
-            queryClient.invalidateQueries({ queryKey: ['finished-products-list'] });
+            queryClient.invalidateQueries({ queryKey: ['finished-products'] });
         },
         onError: (err: Error) => {
             toast({ variant: 'destructive', title: 'Error', description: err.message });
@@ -90,118 +157,321 @@ const FinishedProductsList = () => {
         },
         onSuccess: () => {
             toast({ title: 'Product removed' });
-            queryClient.invalidateQueries({ queryKey: ['finished-products-list'] });
+            queryClient.invalidateQueries({ queryKey: ['finished-products'] });
         },
         onError: (err: Error) => {
             toast({ variant: 'destructive', title: 'Error', description: err.message });
         },
     });
 
+    // ── Helpers ────────────────────────────────────────────────────────────
+
     const resetForm = () => {
-        setForm(emptyForm);
+        setWorkshopForm(emptyWorkshop);
+        setExternalForm(emptyExternal);
         setEditId(null);
         setShowForm(false);
     };
 
     const startEdit = (product: any) => {
-        setForm({
-            product_type: product.product_type,
-            production_cost: String(product.production_cost),
-            location: product.location,
-            branch_id: product.branch_id || '',
-        });
+        const src: SourceMode = product.source_type === 'external' ? 'external' : 'workshop';
+        setMode(src);
+        if (src === 'external') {
+            setExternalForm({
+                product_type: product.product_type || '',
+                purchase_price: String(product.purchase_price || 0),
+                supplier_name: product.supplier_name || '',
+                quantity: '1',
+                location: product.location || 'main_warehouse',
+                branch_id: product.branch_id || '',
+                notes: product.notes || '',
+            });
+        } else {
+            setWorkshopForm({
+                product_type: product.product_type || '',
+                production_cost: String(product.production_cost || 0),
+                location: product.location || 'main_warehouse',
+                branch_id: product.branch_id || '',
+            });
+        }
         setEditId(product.id);
         setShowForm(true);
     };
 
     const filtered = (products || []).filter(p => {
-        const matchesSearch = p.product_type.toLowerCase().includes(search.toLowerCase()) ||
-            p.id.toLowerCase().includes(search.toLowerCase());
+        const matchesSearch =
+            (p.product_type || '').toLowerCase().includes(search.toLowerCase()) ||
+            p.id.toLowerCase().includes(search.toLowerCase()) ||
+            (p.supplier_name || '').toLowerCase().includes(search.toLowerCase());
         const matchesType = !filterType || p.product_type === filterType;
-        return matchesSearch && matchesType;
+        const matchesSource = !filterSource || (p.source_type || 'workshop') === filterSource;
+        return matchesSearch && matchesType && matchesSource;
     });
 
-    const formatCurrency = (val: number) => `Ksh ${val.toLocaleString()}`;
+    const formatCurrency = (val: number) => `Ksh ${(val || 0).toLocaleString()}`;
+
+    const isExternalFormValid =
+        externalForm.product_type.trim() !== '' &&
+        parseInt(externalForm.quantity) >= 1;
+
+    const isWorkshopFormValid = workshopForm.product_type.trim() !== '';
+
+    // ── Render ─────────────────────────────────────────────────────────────
 
     return (
         <div className="space-y-4">
+            {/* Header */}
             <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">{filtered.length} product{filtered.length !== 1 ? 's' : ''}</p>
-                <Button onClick={() => { resetForm(); setShowForm(!showForm); }} size="lg">
-                    {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                    {showForm ? 'Cancel' : 'Add Finished Product'}
+                <p className="text-sm text-muted-foreground">{filtered.length} coffin{filtered.length !== 1 ? 's' : ''} in store</p>
+                <Button onClick={() => { resetForm(); setMode('external'); setShowForm(!showForm); }} size="lg">
+                    {showForm ? <X className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+                    {showForm ? 'Cancel' : 'Add External Stock'}
                 </Button>
             </div>
 
+            {/* Form */}
             {showForm && (
                 <Card className="border-primary/20">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-lg flex items-center gap-2">
-                            <Package className="h-5 w-5 text-primary" />
-                            {editId ? 'Edit Product' : 'Add Finished Product'}
+                            {mode === 'external'
+                                ? <ShoppingCart className="h-5 w-5 text-primary" />
+                                : <Wrench className="h-5 w-5 text-primary" />
+                            }
+                            {editId ? 'Edit Product' : 'Add External Stock'}
                         </CardTitle>
+
+                        {/* Mode selector — only show when adding new */}
+                        {!editId && (
+                            <div className="flex gap-2 mt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('external')}
+                                    className={cn(
+                                        "flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors",
+                                        mode === 'external'
+                                            ? "bg-primary text-primary-foreground border-primary"
+                                            : "bg-card text-muted-foreground border-border hover:bg-accent"
+                                    )}
+                                >
+                                    🛒 Purchased / External
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('workshop')}
+                                    className={cn(
+                                        "flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors",
+                                        mode === 'workshop'
+                                            ? "bg-primary text-primary-foreground border-primary"
+                                            : "bg-card text-muted-foreground border-border hover:bg-accent"
+                                    )}
+                                >
+                                    🔨 Workshop Made
+                                </button>
+                            </div>
+                        )}
                     </CardHeader>
+
                     <CardContent>
                         <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="space-y-4">
+
+                            {/* Coffin type picker — shared */}
                             <div className="space-y-2">
-                                <Label>Product Type</Label>
+                                <Label>Coffin Type</Label>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    {productTypes.map(type => (
-                                        <button key={type} type="button" onClick={() => setForm(f => ({ ...f, product_type: type }))}
-                                            className={cn("px-3 py-2.5 rounded-xl text-[10px] font-medium border transition-colors text-center",
-                                                form.product_type === type ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
-                                            )}>{type}</button>
-                                    ))}
+                                    {productTypes.map(type => {
+                                        const selected = mode === 'external'
+                                            ? externalForm.product_type === type
+                                            : workshopForm.product_type === type;
+                                        return (
+                                            <button
+                                                key={type}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (mode === 'external') setExternalForm(f => ({ ...f, product_type: type }));
+                                                    else setWorkshopForm(f => ({ ...f, product_type: type }));
+                                                }}
+                                                className={cn(
+                                                    "px-3 py-2.5 rounded-xl text-[10px] font-medium border transition-colors text-center",
+                                                    selected
+                                                        ? "bg-primary text-primary-foreground border-primary"
+                                                        : "bg-card text-foreground border-border hover:bg-accent"
+                                                )}
+                                            >
+                                                {type}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Production Cost (Ksh)</Label>
-                                    <Input type="number" value={form.production_cost} onChange={(e) => setForm(f => ({ ...f, production_cost: e.target.value }))} className="h-12" min="0" step="0.01" required />
+                            {/* ── External-only fields ── */}
+                            {mode === 'external' && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Quantity</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                value={externalForm.quantity}
+                                                onChange={e => setExternalForm(f => ({ ...f, quantity: e.target.value }))}
+                                                className="h-12"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Purchase Price (Ksh)</Label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={externalForm.purchase_price}
+                                                onChange={e => setExternalForm(f => ({ ...f, purchase_price: e.target.value }))}
+                                                className="h-12"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label>Supplier / Source <span className="text-muted-foreground text-[10px]">(optional)</span></Label>
+                                        <Input
+                                            value={externalForm.supplier_name}
+                                            onChange={e => setExternalForm(f => ({ ...f, supplier_name: e.target.value }))}
+                                            placeholder="e.g. Nairobi Casket Suppliers"
+                                            className="h-12"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Storage Location</Label>
+                                            <Input
+                                                value={externalForm.location}
+                                                onChange={e => setExternalForm(f => ({ ...f, location: e.target.value }))}
+                                                placeholder="e.g. Aisle 4, Shelf B"
+                                                className="h-12"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Branch (if assigned)</Label>
+                                            <select
+                                                value={externalForm.branch_id}
+                                                onChange={e => setExternalForm(f => ({ ...f, branch_id: e.target.value }))}
+                                                className="w-full h-12 rounded-lg border border-input bg-background px-3 text-sm"
+                                            >
+                                                <option value="">Main Warehouse / Unassigned</option>
+                                                {(branches || []).map(b => (
+                                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label>Notes <span className="text-muted-foreground text-[10px]">(optional)</span></Label>
+                                        <Input
+                                            value={externalForm.notes}
+                                            onChange={e => setExternalForm(f => ({ ...f, notes: e.target.value }))}
+                                            placeholder="Any extra details..."
+                                            className="h-12"
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {/* ── Workshop-only fields ── */}
+                            {mode === 'workshop' && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Production Cost (Ksh)</Label>
+                                        <Input
+                                            type="number"
+                                            value={workshopForm.production_cost}
+                                            onChange={e => setWorkshopForm(f => ({ ...f, production_cost: e.target.value }))}
+                                            className="h-12"
+                                            min="0"
+                                            step="0.01"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Storage Location</Label>
+                                        <Input
+                                            value={workshopForm.location}
+                                            onChange={e => setWorkshopForm(f => ({ ...f, location: e.target.value }))}
+                                            placeholder="e.g. Aisle 4, Shelf B"
+                                            className="h-12"
+                                        />
+                                    </div>
+                                    <div className="space-y-2 sm:col-span-2">
+                                        <Label>Branch (if assigned)</Label>
+                                        <select
+                                            value={workshopForm.branch_id}
+                                            onChange={e => setWorkshopForm(f => ({ ...f, branch_id: e.target.value }))}
+                                            className="w-full h-12 rounded-lg border border-input bg-background px-3 text-sm"
+                                        >
+                                            <option value="">Main Warehouse / Unassigned</option>
+                                            {(branches || []).map(b => (
+                                                <option key={b.id} value={b.id}>{b.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label>Storage Location</Label>
-                                    <Input value={form.location} onChange={(e) => setForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. Aisle 4, Shelf B" className="h-12" />
-                                </div>
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label>Branch (if assigned)</Label>
-                                    <select
-                                        value={form.branch_id}
-                                        onChange={(e) => setForm(f => ({ ...f, branch_id: e.target.value }))}
-                                        className="w-full h-12 rounded-lg border border-input bg-background px-3 text-sm"
-                                    >
-                                        <option value="">Main Warehouse / Unassigned</option>
-                                        {(branches || []).map(b => (
-                                            <option key={b.id} value={b.id}>{b.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            <Button type="submit" size="lg" className="w-full" disabled={saveMutation.isPending || !form.product_type}>
+                            )}
+
+                            <Button
+                                type="submit"
+                                size="lg"
+                                className="w-full"
+                                disabled={
+                                    saveMutation.isPending ||
+                                    (mode === 'external' ? !isExternalFormValid : !isWorkshopFormValid)
+                                }
+                            >
                                 {saveMutation.isPending && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
-                                {editId ? 'Update Product' : 'Add to Inventory'}
+                                {editId
+                                    ? 'Update Product'
+                                    : mode === 'external'
+                                        ? `Add ${externalForm.quantity || 1} Coffin${parseInt(externalForm.quantity) !== 1 ? 's' : ''} to Store`
+                                        : 'Add to Inventory'
+                                }
                             </Button>
                         </form>
                     </CardContent>
                 </Card>
             )}
 
-            <div className="flex gap-2">
-                <div className="relative flex-1">
+            {/* Filters */}
+            <div className="flex gap-2 flex-wrap">
+                <div className="relative flex-1 min-w-[140px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search inventory..." className="pl-10 h-11" />
+                    <Input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Search by type or supplier..."
+                        className="pl-10 h-11"
+                    />
                 </div>
                 <select
                     value={filterType}
-                    onChange={(e) => setFilterType(e.target.value)}
-                    className="h-11 rounded-lg border border-input bg-background px-3 text-sm min-w-[100px]"
+                    onChange={e => setFilterType(e.target.value)}
+                    className="h-11 rounded-lg border border-input bg-background px-3 text-sm"
                 >
                     <option value="">All Types</option>
                     {productTypes.map(type => <option key={type} value={type}>{type}</option>)}
                 </select>
+                <select
+                    value={filterSource}
+                    onChange={e => setFilterSource(e.target.value as any)}
+                    className="h-11 rounded-lg border border-input bg-background px-3 text-sm"
+                >
+                    <option value="">All Sources</option>
+                    <option value="external">External</option>
+                    <option value="workshop">Workshop</option>
+                </select>
             </div>
 
+            {/* List */}
             {isLoading ? (
                 <div className="space-y-3">
                     {[1, 2, 3].map(i => <div key={i} className="bg-card rounded-2xl border p-4 animate-pulse h-24" />)}
@@ -209,37 +479,82 @@ const FinishedProductsList = () => {
             ) : filtered.length === 0 ? (
                 <div className="bg-card rounded-2xl border p-12 text-center">
                     <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground">No finished products in inventory</p>
+                    <p className="text-muted-foreground">No coffins in inventory</p>
+                    <p className="text-xs text-muted-foreground mt-1">Tap "Add External Stock" to add ready coffins</p>
                 </div>
             ) : (
                 <div className="space-y-2">
-                    {filtered.map((product) => (
-                        <Card key={product.id} className="border">
-                            <CardContent className="p-4">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-foreground truncate">{product.product_type}</p>
-                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground mt-1">
-                                            <span className="flex items-center gap-1"><Package className="h-3 w-3" /> {product.id.slice(0, 8)}</span>
-                                            <span>Cost: {formatCurrency(product.production_cost)}</span>
-                                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {product.branches?.name || product.location || 'Warehouse'}</span>
-                                            <span>Completed: {new Date(product.completed_at).toLocaleDateString()}</span>
+                    {filtered.map(product => {
+                        const isExternal = (product as any).source_type === 'external';
+                        return (
+                            <Card key={product.id} className="border">
+                                <CardContent className="p-4">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <p className="font-medium text-foreground truncate">{product.product_type}</p>
+                                                <span className={cn(
+                                                    "text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0",
+                                                    isExternal
+                                                        ? "bg-amber-500/10 text-amber-600"
+                                                        : "bg-blue-500/10 text-blue-600"
+                                                )}>
+                                                    {isExternal ? '🛒 External' : '🔨 Workshop'}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+                                                <span className="flex items-center gap-1">
+                                                    <Package className="h-3 w-3" /> {product.id.slice(0, 8)}
+                                                </span>
+                                                {isExternal ? (
+                                                    <>
+                                                        {(product as any).batch_number && (
+                                                            <span className="font-mono bg-accent px-1 rounded">{(product as any).batch_number}</span>
+                                                        )}
+                                                        {(product as any).supplier_name && (
+                                                            <span>Supplier: {(product as any).supplier_name}</span>
+                                                        )}
+                                                        <span>Bought: {formatCurrency((product as any).purchase_price || 0)}</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {product.production_orders?.product_code && (
+                                                            <span className="font-mono">{product.production_orders.product_code}</span>
+                                                        )}
+                                                        <span>Cost: {formatCurrency(product.production_cost)}</span>
+                                                    </>
+                                                )}
+                                                <span className="flex items-center gap-1">
+                                                    <MapPin className="h-3 w-3" />
+                                                    {product.branches?.name || product.location || 'Warehouse'}
+                                                </span>
+                                                {product.completed_at && (
+                                                    <span>Added: {new Date(product.completed_at).toLocaleDateString()}</span>
+                                                )}
+                                            </div>
+                                            {(product as any).notes && (
+                                                <p className="text-[10px] text-muted-foreground mt-1 italic">{(product as any).notes}</p>
+                                            )}
+                                        </div>
+                                        <div className="flex gap-1 ml-2 shrink-0">
+                                            <Button variant="ghost" size="icon" onClick={() => startEdit(product)} className="h-8 w-8">
+                                                <Pencil className="h-3.5 w-3.5" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost" size="icon"
+                                                onClick={() => {
+                                                    if (confirm('Remove this coffin from inventory?')) deleteMutation.mutate(product.id);
+                                                }}
+                                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
                                         </div>
                                     </div>
-                                    <div className="flex gap-1 ml-2 shrink-0">
-                                        <Button variant="ghost" size="icon" onClick={() => startEdit(product)} className="h-8 w-8">
-                                            <Pencil className="h-3.5 w-3.5" />
-                                        </Button>
-                                        <Button variant="ghost" size="icon" onClick={() => {
-                                            if (confirm('Remove this product from inventory?')) deleteMutation.mutate(product.id);
-                                        }} className="h-8 w-8 text-destructive hover:text-destructive">
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
                 </div>
             )}
         </div>

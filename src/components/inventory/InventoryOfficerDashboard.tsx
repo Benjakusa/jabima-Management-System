@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Package, Wrench, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText } from 'lucide-react';
+import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw } from 'lucide-react';
 import InventoryOverview from './InventoryOverview';
 import RawMaterialsList from './RawMaterialsList';
-import ServiceEquipmentList from './ServiceEquipmentList';
 import SuppliersList from './SuppliersList';
 import StockAlerts from './StockAlerts';
 import InventoryRequestProcessing from './InventoryRequestProcessing';
@@ -17,20 +18,19 @@ import ProductRequestProcessing from './ProductRequestProcessing';
 import ProductReturnProcessing from './ProductReturnProcessing';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'materials' | 'finished' | 'equipment' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'wallet' | 'report';
+type Tab = 'overview' | 'materials' | 'finished' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'wallet' | 'report';
 
 const tabs: { id: Tab; label: string; icon: typeof Package }[] = [
   { id: 'overview', label: 'Home', icon: LayoutDashboard },
   { id: 'materials', label: 'Materials', icon: Package },
   { id: 'finished', label: 'Finished', icon: Package },
-  { id: 'equipment', label: 'Services', icon: Wrench },
   { id: 'requests', label: 'Material Req', icon: ClipboardList },
   { id: 'returns', label: 'Material Ret', icon: RotateCcw },
 ];
 
 const secondaryTabs: { id: Tab; label: string; icon: typeof Package }[] = [
-  { id: 'product_requests', label: 'Product Requests', icon: ClipboardList },
-  { id: 'product_returns', label: 'Product Returns', icon: RotateCcw },
+  { id: 'product_requests', label: 'Product Requests', icon: Truck },
+  { id: 'product_returns', label: 'Product Returns', icon: RotateCw },
   { id: 'suppliers', label: 'Suppliers', icon: Users },
   { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
   { id: 'wallet', label: 'Wallet', icon: Wallet },
@@ -42,6 +42,19 @@ const InventoryOfficerDashboard = () => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
   const allTabs = [...tabs, ...secondaryTabs];
+
+  const { data: pendingCount } = useQuery({
+    queryKey: ['pending-product-requests-count'],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('product_requests' as any)
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      if (error) return 0;
+      return count || 0;
+    },
+    refetchInterval: 10000,
+  });
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -58,10 +71,18 @@ const InventoryOfficerDashboard = () => {
         <div className="flex items-center gap-1">
           {secondaryTabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={cn("p-2 rounded-lg transition-colors",
+              className={cn("p-2 rounded-lg transition-colors relative group",
                 activeTab === tab.id ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
-              )}>
+              )} title={tab.label}>
               <tab.icon className="h-4 w-4" />
+              {tab.id === 'product_requests' && (pendingCount || 0) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 bg-destructive text-destructive-foreground text-[8px] font-bold rounded-full flex items-center justify-center">
+                  {pendingCount}
+                </span>
+              )}
+              <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-[9px] px-1.5 py-0.5 rounded border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[100]">
+                {tab.label}
+              </span>
             </button>
           ))}
           <Button variant="ghost" size="icon" onClick={signOut}>
@@ -76,7 +97,6 @@ const InventoryOfficerDashboard = () => {
         {activeTab === 'overview' && <InventoryOverview />}
         {activeTab === 'materials' && <RawMaterialsList />}
         {activeTab === 'finished' && <FinishedProductsList />}
-        {activeTab === 'equipment' && <ServiceEquipmentList />}
         {activeTab === 'suppliers' && <SuppliersList />}
         {activeTab === 'alerts' && <StockAlerts />}
         {activeTab === 'requests' && (

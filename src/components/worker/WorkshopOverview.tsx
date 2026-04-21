@@ -3,9 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Factory, CheckCircle, Clock, Package, AlertTriangle } from 'lucide-react';
-
-const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+import { Button } from '@/components/ui/button';
+import { Factory, CheckCircle, Clock, Package, Settings } from 'lucide-react';
+import { formatStage } from '@/lib/utils';
 
 const WorkshopOverview = () => {
   const { user } = useAuth();
@@ -106,10 +106,9 @@ const WorkshopOverview = () => {
             <Badge key={s} variant="secondary" className="text-xs py-1 px-3">{formatStage(s)}</Badge>
           ))}
           {(!assignments || assignments.length === 0) && (
-            <div className="flex items-center gap-2 text-sm text-warning">
-              <AlertTriangle className="h-4 w-4" />
-              No stages assigned — contact admin
-            </div>
+            <p className="text-xs text-muted-foreground text-center py-2">
+              Use the <span className="font-medium text-foreground">My Stages</span> tab below to choose your work areas
+            </p>
           )}
         </div>
       </div>

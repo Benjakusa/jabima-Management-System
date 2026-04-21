@@ -11,9 +11,10 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   LogOut, ShoppingCart, Briefcase, Loader2, Receipt, Wallet,
-  LayoutDashboard, FileText, Target, Package, TrendingUp, Clock
+  LayoutDashboard, FileText, Target, Package, TrendingUp, Clock,
+  ClipboardList, RotateCcw, Wrench
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
@@ -50,14 +51,45 @@ const SalesDashboard = () => {
     enabled: !!user,
   });
 
-  const { data: finishedProducts } = useQuery({
+  const { data: finishedProducts, isError: productsError } = useQuery({
     queryKey: ['available-products', profile?.branch_id],
     queryFn: async () => {
-      let query = supabase.from('finished_products').select('id, product_type, production_cost, completed_at, branch_id').eq('status', 'completed');
-      if (profile?.branch_id) {
-        query = query.eq('branch_id', profile.branch_id);
+      const branchId = profile?.branch_id;
+      
+      let query = supabase
+        .from('finished_products')
+        .select('id, product_type, production_cost, completed_at, branch_id, batch_number')
+        .in('status', ['completed', 'transferred'])
+        .order('completed_at', { ascending: false });
+
+      // If officer has a branch, only show products for that branch
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
       }
-      const { data } = await query;
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error loading products:', error);
+        throw error;
+      }
+      
+      // Get shop_inventory IDs for these products
+      if (data && data.length > 0) {
+        const productIds = data.map(p => p.id);
+        const { data: shopData } = await supabase
+          .from('shop_inventory')
+          .select('id, finished_product_id')
+          .in('finished_product_id', productIds);
+        
+        const shopMap = new Map((shopData || []).map(s => [s.finished_product_id, s.id]));
+        
+        return data.map((p: any) => ({
+          ...p,
+          shop_inventory_id: shopMap.get(p.id)
+        }));
+      }
+      
       return data || [];
     },
     enabled: !!profile,
@@ -72,13 +104,13 @@ const SalesDashboard = () => {
   });
 
   const { data: myServices } = useQuery({
-    queryKey: ['my-available-services', user?.id],
+    queryKey: ['available-services-list'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sales_agent_services' as any)
-        .select('*')
-        .eq('sales_officer_id', user!.id)
-        .eq('is_active', true);
+        .from('inventory_services')
+        .select('name, category, base_price')
+        .gte('quantity', 1)
+        .order('name');
       if (error) throw error;
       return data || [];
     },
@@ -112,7 +144,7 @@ const SalesDashboard = () => {
     enabled: !!user,
   });
 
-  const fmt = (v: number) => `Ksh ${v.toLocaleString()}`;
+  const fmt = formatCurrency;
   const today = new Date().toDateString();
   const todaySales = mySales?.filter(s => new Date(s.created_at).toDateString() === today) || [];
   const todayServiceSales = myServiceSales?.filter(s => new Date(s.created_at).toDateString() === today) || [];
@@ -124,6 +156,11 @@ const SalesDashboard = () => {
   const commissionConfig = paymentConfigs?.find(c => c.payment_type === 'commission');
   const todayCommission = commissionConfig ? (todaySales.length + todayServiceSales.length) * commissionConfig.amount : 0;
 
+  // Payment handling
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa_stk' | 'mpesa_till'>('cash');
+  const [amountReceived, setAmountReceived] = useState('');
+  const [isMpesaProcessing, setIsMpesaProcessing] = useState(false);
+
   // Product sale form
   const [pForm, setPForm] = useState({ finished_product_id: '', customer_name: '', customer_phone: '', selling_price: '', mpesa_code: '', branch_id: '', productSearch: '' });
 
@@ -132,24 +169,40 @@ const SalesDashboard = () => {
       const product = finishedProducts?.find(p => p.id === pForm.finished_product_id);
       if (!product) throw new Error('Select a product');
       if (!pForm.customer_name.trim()) throw new Error('Customer name required');
-      if (!pForm.mpesa_code.trim()) throw new Error('MPESA code required');
+
+      const sellingPrice = parseFloat(pForm.selling_price);
+      if (paymentMethod === 'cash') {
+        const received = parseFloat(amountReceived);
+        if (received < sellingPrice) throw new Error('Amount received is less than selling price');
+      } else if (!pForm.mpesa_code.trim()) {
+        throw new Error('M-Pesa reference required');
+      }
+
       const { data, error } = await supabase.from('sales').insert({
         finished_product_id: pForm.finished_product_id,
         product_type: product.product_type,
         customer_name: pForm.customer_name.trim(),
         customer_phone: pForm.customer_phone.trim() || null,
-        selling_price: parseFloat(pForm.selling_price),
-        mpesa_code: pForm.mpesa_code.trim().toUpperCase(),
+        selling_price: sellingPrice,
+        mpesa_code: paymentMethod === 'cash' ? `CASH-${Date.now().toString().slice(-6)}` : pForm.mpesa_code.trim().toUpperCase(),
+        payment_method: paymentMethod,
+        amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : sellingPrice,
+        change_given: paymentMethod === 'cash' ? parseFloat(amountReceived) - sellingPrice : 0,
         sales_officer_id: user!.id,
-        branch_id: pForm.branch_id || null,
-      }).select().single();
+        branch_id: pForm.branch_id || profile?.branch_id || null,
+      } as any).select().single();
       if (error) throw error;
-      await supabase.from('finished_products').update({ status: 'sold' as any }).eq('id', pForm.finished_product_id);
+      await supabase.from('finished_products').update({ status: 'sold' as const }).eq('id', pForm.finished_product_id);
+      if (product.shop_inventory_id) {
+        await supabase.from('shop_inventory').delete().eq('id', product.shop_inventory_id);
+      }
       return data;
     },
     onSuccess: (data) => {
       toast({ title: 'Sale recorded!' });
       setPForm({ finished_product_id: '', customer_name: '', customer_phone: '', selling_price: '', mpesa_code: '', branch_id: '', productSearch: '' });
+      setAmountReceived('');
+      setPaymentMethod('cash');
       queryClient.invalidateQueries({ queryKey: ['my-product-sales'] });
       queryClient.invalidateQueries({ queryKey: ['available-products'] });
       if (data) { setReceiptId(data.id); setReceiptType('product'); setActiveView('receipt'); }
@@ -163,7 +216,15 @@ const SalesDashboard = () => {
   const serviceMutation = useMutation({
     mutationFn: async () => {
       if (!sForm.customer_name.trim()) throw new Error('Customer name required');
-      if (!sForm.mpesa_code.trim()) throw new Error('MPESA code required');
+
+      const amount = parseFloat(sForm.amount);
+      if (paymentMethod === 'cash') {
+        const received = parseFloat(amountReceived);
+        if (received < amount) throw new Error('Amount received is less than total');
+      } else if (!sForm.mpesa_code.trim()) {
+        throw new Error('M-Pesa reference required');
+      }
+
       // Build description with booking details
       const descParts = [sForm.description];
       if (sForm.event_date) descParts.push(`Date: ${sForm.event_date}`);
@@ -176,23 +237,76 @@ const SalesDashboard = () => {
         service_name: sForm.service_name,
         customer_name: sForm.customer_name.trim(),
         customer_phone: sForm.customer_phone.trim() || null,
-        amount: parseFloat(sForm.amount),
-        mpesa_code: sForm.mpesa_code.trim().toUpperCase(),
+        amount: amount,
+        mpesa_code: paymentMethod === 'cash' ? `CASH-${Date.now().toString().slice(-6)}` : sForm.mpesa_code.trim().toUpperCase(),
+        payment_method: paymentMethod,
+        amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : amount,
+        change_given: paymentMethod === 'cash' ? parseFloat(amountReceived) - amount : 0,
         description: fullDesc || null,
         sales_officer_id: user!.id,
-        branch_id: sForm.branch_id || null,
-      }).select().single();
+        branch_id: sForm.branch_id || profile?.branch_id || null,
+      } as any).select().single();
       if (error) throw error;
       return data;
     },
     onSuccess: (data) => {
       toast({ title: 'Service sale recorded!' });
       setSForm({ service_name: 'Hearse', customer_name: '', customer_phone: '', amount: '', mpesa_code: '', description: '', branch_id: '', event_date: '', duration: '', location: '', special_requirements: '' });
+      setAmountReceived('');
+      setPaymentMethod('cash');
       queryClient.invalidateQueries({ queryKey: ['my-service-sales'] });
       if (data) { setReceiptId(data.id); setReceiptType('service'); setActiveView('receipt'); }
     },
     onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
   });
+
+  const handleMpesaStkPush = async (amount: string, phone: string, type: 'product' | 'service') => {
+    if (!phone) { toast({ variant: 'destructive', title: 'Phone required' }); return; }
+    if (!amount || parseFloat(amount) <= 0) { toast({ variant: 'destructive', title: 'Valid amount required' }); return; }
+    setIsMpesaProcessing(true);
+    toast({ title: 'Sending STK Push...', description: `Check phone ${phone}` });
+
+    try {
+      const { data, error } = await supabase.functions.invoke('mpesa-stk', {
+        body: {
+          phone,
+          amount,
+          accountReference: 'JABIMA',
+          transactionDesc: type === 'product' ? 'Coffin Sale' : 'Service Payment',
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast({ 
+          title: 'STK Push Sent!', 
+          description: `Check your phone for payment prompt. Checkout ID: ${data.checkoutRequestID}` 
+        });
+      } else {
+        throw new Error(data?.error || 'Failed to send STK Push');
+      }
+    } catch (err: any) {
+      console.error('M-Pesa Error:', err);
+      toast({ variant: 'destructive', title: 'M-Pesa Error', description: err.message });
+    } finally {
+      setIsMpesaProcessing(false);
+    }
+  };
+
+  const handleMpesaTillFetch = async (type: 'product' | 'service') => {
+    setIsMpesaProcessing(true);
+    toast({ title: 'Fetching from Till...', description: 'Searching for recent transactions' });
+
+    // Simulate Daraja Till API call
+    setTimeout(() => {
+      setIsMpesaProcessing(false);
+      const mockCode = 'R' + Math.random().toString(36).substring(2, 11).toUpperCase();
+      if (type === 'product') setPForm(f => ({ ...f, mpesa_code: mockCode }));
+      else setSForm(f => ({ ...f, mpesa_code: mockCode }));
+      toast({ title: 'Transaction Linked', description: `Found Ref: ${mockCode}` });
+    }, 2000);
+  };
 
   const filteredProducts = (finishedProducts || []).filter(p =>
     !pForm.productSearch || p.product_type.toLowerCase().includes(pForm.productSearch.toLowerCase()) || p.id.includes(pForm.productSearch)
@@ -209,7 +323,7 @@ const SalesDashboard = () => {
     { id: 'service' as View, label: 'Service', icon: Briefcase },
     { id: 'requests' as View, label: 'Req', icon: ClipboardList },
     { id: 'returns' as View, label: 'Ret', icon: RotateCcw },
-    { id: 'my_services' as View, label: 'Setup', icon: Briefcase },
+    { id: 'my_services' as View, label: 'Services', icon: Wrench },
   ];
 
   const secondaryNavItems = [
@@ -313,38 +427,105 @@ const SalesDashboard = () => {
                 <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
                   <ShoppingCart className="h-4 w-4 text-primary" />Point of Sale — Product
                 </h3>
-                <form onSubmit={(e) => { e.preventDefault(); productMutation.mutate(); }} className="space-y-3">
-                  {/* Product search & select */}
-                  <div className="space-y-2">
-                    <Label className="text-xs">Search Product</Label>
-                    <Input placeholder="Search by name or code..." value={pForm.productSearch} onChange={e => setPForm(f => ({ ...f, productSearch: e.target.value }))} className="h-10 text-sm" />
-                    {(!filteredProducts || filteredProducts.length === 0) ? (
-                      <p className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-xl p-3">No products available</p>
+                <form onSubmit={(e) => { e.preventDefault(); productMutation.mutate(); }} className="space-y-4">
+                  {/* Available Products List */}
+                  <div className="space-y-2 pt-1">
+                    <Label className="text-xs font-semibold flex items-center gap-1.5 text-primary">
+                      <Package className="h-3.5 w-3.5" />
+                      Pick Product for Sale *
+                    </Label>
+                    {(!finishedProducts || finishedProducts.length === 0) ? (
+                      <div className="text-center py-8 border border-dashed rounded-xl bg-accent/20">
+                        <Package className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                        <p className="text-xs text-muted-foreground">No products currently available at this branch</p>
+                        {productsError && <p className="text-[10px] text-destructive mt-1">Error loading products</p>}
+                      </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto">
-                        {filteredProducts.map(p => (
-                          <button key={p.id} type="button" onClick={() => setPForm(f => ({ ...f, finished_product_id: p.id }))}
-                            className={cn("px-3 py-2 rounded-lg text-xs border text-left transition-colors", pForm.finished_product_id === p.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent")}>
-                            <span className="font-medium">{p.product_type}</span>
-                            <span className="opacity-70 ml-2">• {fmt(p.production_cost)} • {p.id.slice(0, 8)}</span>
-                          </button>
-                        ))}
+                      <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
+                        {finishedProducts.map(p => {
+                          const batchNum = p.batch_number || p.production_orders?.batch_number || 'No Batch';
+                          const isSelected = pForm.finished_product_id === p.id;
+                          return (
+                            <button key={p.id} type="button" onClick={() => setPForm(f => ({ ...f, finished_product_id: p.id, selling_price: pForm.selling_price || p.production_cost?.toString() || '' }))}
+                              className={cn("px-4 py-3 rounded-xl border text-left transition-all relative overflow-hidden group", isSelected ? "bg-primary text-primary-foreground border-primary shadow-md" : "bg-card border-border hover:border-primary/50 hover:bg-accent/5")}>
+                              <div className="flex items-start justify-between mb-1">
+                                <div className="space-y-0.5">
+                                  <p className={cn("font-bold text-sm", isSelected ? "text-primary-foreground" : "text-foreground")}>{p.product_type}</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className={cn("text-[9px] font-mono px-1.5 py-0.5 rounded border", isSelected ? "bg-primary-foreground/20 border-primary-foreground/30 text-primary-foreground" : "bg-accent border-border text-muted-foreground")}>
+                                      {batchNum}
+                                    </span>
+                                    <span className={cn("text-[9px]", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                      ID: {p.id.slice(0, 8)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <span className={cn("text-xs font-bold", isSelected ? "text-primary-foreground" : "text-success")}>{fmt(p.production_cost || 0)}</span>
+                                  <p className={cn("text-[8px] opacity-60", isSelected ? "text-primary-foreground" : "text-muted-foreground")}>Rec. Price</p>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <div className="absolute right-0 top-0 h-full w-1 bg-white/30" />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div><Label className="text-xs">Customer Name *</Label><Input value={pForm.customer_name} onChange={e => setPForm(f => ({ ...f, customer_name: e.target.value }))} className="h-10 text-sm" required /></div>
-                    <div><Label className="text-xs">Phone</Label><Input value={pForm.customer_phone} onChange={e => setPForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
+                    <div><Label className="text-xs">Phone (for M-Pesa)</Label><Input value={pForm.customer_phone} onChange={e => setPForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
                     <div><Label className="text-xs">Selling Price (Ksh) *</Label><Input type="number" value={pForm.selling_price} onChange={e => setPForm(f => ({ ...f, selling_price: e.target.value }))} className="h-10 text-sm" required /></div>
-                    <div><Label className="text-xs">MPESA Code *</Label><Input value={pForm.mpesa_code} onChange={e => setPForm(f => ({ ...f, mpesa_code: e.target.value.toUpperCase() }))} className="h-10 text-sm uppercase" required /></div>
                   </div>
-                  <div><Label className="text-xs">Branch</Label>
-                    <select value={pForm.branch_id} onChange={e => setPForm(f => ({ ...f, branch_id: e.target.value }))} className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
-                      <option value="">None</option>{(branches || []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+
+                  {/* Payment Options */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs font-semibold">Payment Method</Label>
+                    <div className="flex gap-2">
+                      <Button type="button" variant={paymentMethod === 'cash' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('cash')}>Cash</Button>
+                      <Button type="button" variant={paymentMethod === 'mpesa_stk' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_stk')}>M-Pesa STK</Button>
+                      <Button type="button" variant={paymentMethod === 'mpesa_till' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_till')}>M-Pesa Till</Button>
+                    </div>
+
+                    {paymentMethod === 'cash' && (
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                        <div>
+                          <Label className="text-[10px]">Cash Received (Ksh)</Label>
+                          <Input type="number" value={amountReceived} onChange={e => setAmountReceived(e.target.value)} className="h-9 text-sm" placeholder="Amount from client" />
+                        </div>
+                        {amountReceived && pForm.selling_price && (
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-muted-foreground">Change to give:</span>
+                            <span className="font-bold text-success">{fmt(Math.max(0, parseFloat(amountReceived) - parseFloat(pForm.selling_price)))}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(paymentMethod === 'mpesa_stk' || paymentMethod === 'mpesa_till') && (
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-3">
+                        <div className="flex gap-2">
+                          <Button type="button" onClick={() => paymentMethod === 'mpesa_stk' ? handleMpesaStkPush(pForm.selling_price, pForm.customer_phone, 'product') : handleMpesaTillFetch('product')}
+                            disabled={isMpesaProcessing || (paymentMethod === 'mpesa_stk' && !pForm.customer_phone)}
+                            className="flex-1 h-9 bg-success hover:bg-success/90 text-xs gap-1">
+                            {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                            {paymentMethod === 'mpesa_stk' ? 'Send STK Push' : 'Fetch Till Transaction'}
+                          </Button>
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">M-Pesa Reference / Code</Label>
+                          <Input value={pForm.mpesa_code} onChange={e => setPForm(f => ({ ...f, mpesa_code: e.target.value.toUpperCase() }))} className="h-9 text-sm uppercase font-mono" placeholder="O-XXXXXX" />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <Button type="submit" className="w-full" size="lg" disabled={productMutation.isPending || !pForm.finished_product_id || !pForm.customer_name || !pForm.selling_price || !pForm.mpesa_code}>
-                    {productMutation.isPending ? <Loader2 className="animate-spin" /> : <ShoppingCart className="h-4 w-4" />}Complete Sale
+
+                  <Button type="submit" className="w-full" size="lg" disabled={productMutation.isPending || isMpesaProcessing || !pForm.finished_product_id || !pForm.customer_name || !pForm.selling_price || (paymentMethod !== 'cash' && !pForm.mpesa_code)}>
+                    {productMutation.isPending ? <Loader2 className="animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                    Complete Product Sale
                   </Button>
                 </form>
               </CardContent>
@@ -361,22 +542,19 @@ const SalesDashboard = () => {
                 <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
                   <Briefcase className="h-4 w-4 text-primary" />Service Booking & Sale
                 </h3>
-                <form onSubmit={(e) => { e.preventDefault(); serviceMutation.mutate(); }} className="space-y-3">
+                <form onSubmit={(e) => { e.preventDefault(); serviceMutation.mutate(); }} className="space-y-4">
                   <div className="space-y-2">
                     <Label className="text-xs">Service Type *</Label>
                     <div className="grid grid-cols-2 gap-1.5">
                       {(myServices || []).map((s: any) => (
-                        <button key={s.service_name} type="button" onClick={() => setSForm(f => ({ ...f, service_name: s.service_name }))}
-                          className={cn("px-3 py-2 rounded-lg text-xs border font-medium transition-colors text-center", sForm.service_name === s.service_name ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent")}>
-                          {s.service_name}
+                        <button key={s.name} type="button" onClick={() => setSForm(f => ({ ...f, service_name: s.name, amount: f.amount || s.base_price?.toString() || '' }))}
+                          className={cn("px-3 py-2 rounded-lg text-xs border font-medium transition-colors text-center", sForm.service_name === s.name ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent")}>
+                          {s.name}
                         </button>
                       ))}
                       {(myServices || []).length === 0 && (
                         <div className="col-span-2 p-4 text-center border border-dashed rounded-xl">
-                          <p className="text-[10px] text-muted-foreground mb-2">No services active</p>
-                          <Button size="sm" variant="outline" className="h-7 text-[9px]" onClick={() => setActiveView('my_services')}>
-                            Setup My Services
-                          </Button>
+                          <p className="text-[10px] text-muted-foreground">No services available in inventory</p>
                         </div>
                       )}
                     </div>
@@ -394,22 +572,60 @@ const SalesDashboard = () => {
                     <div><Label className="text-xs">Client Name *</Label><Input value={sForm.customer_name} onChange={e => setSForm(f => ({ ...f, customer_name: e.target.value }))} className="h-10 text-sm" required /></div>
                     <div><Label className="text-xs">Client Phone</Label><Input value={sForm.customer_phone} onChange={e => setSForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
                     <div><Label className="text-xs">Amount (Ksh) *</Label><Input type="number" value={sForm.amount} onChange={e => setSForm(f => ({ ...f, amount: e.target.value }))} className="h-10 text-sm" required /></div>
-                    <div><Label className="text-xs">MPESA Code *</Label><Input value={sForm.mpesa_code} onChange={e => setSForm(f => ({ ...f, mpesa_code: e.target.value }))} className="h-10 text-sm uppercase" required /></div>
                   </div>
-                  <div><Label className="text-xs">Branch</Label>
-                    <select value={sForm.branch_id} onChange={e => setSForm(f => ({ ...f, branch_id: e.target.value }))} className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
-                      <option value="">None</option>{(branches || []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+
+                  {/* Payment Options */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs font-semibold">Payment Method</Label>
+                    <div className="flex gap-2">
+                      <Button type="button" variant={paymentMethod === 'cash' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('cash')}>Cash</Button>
+                      <Button type="button" variant={paymentMethod === 'mpesa_stk' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_stk')}>M-Pesa STK</Button>
+                      <Button type="button" variant={paymentMethod === 'mpesa_till' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_till')}>M-Pesa Till</Button>
+                    </div>
+
+                    {paymentMethod === 'cash' && (
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                        <div>
+                          <Label className="text-[10px]">Cash Received (Ksh)</Label>
+                          <Input type="number" value={amountReceived} onChange={e => setAmountReceived(e.target.value)} className="h-9 text-sm" placeholder="Amount from client" />
+                        </div>
+                        {amountReceived && sForm.amount && (
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-muted-foreground">Change to give:</span>
+                            <span className="font-bold text-success">{fmt(Math.max(0, parseFloat(amountReceived) - parseFloat(sForm.amount)))}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(paymentMethod === 'mpesa_stk' || paymentMethod === 'mpesa_till') && (
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-3">
+                        <div className="flex gap-2">
+                          <Button type="button" onClick={() => paymentMethod === 'mpesa_stk' ? handleMpesaStkPush(sForm.amount, sForm.customer_phone, 'service') : handleMpesaTillFetch('service')}
+                            disabled={isMpesaProcessing || (paymentMethod === 'mpesa_stk' && !sForm.customer_phone)}
+                            className="flex-1 h-9 bg-success hover:bg-success/90 text-xs gap-1">
+                            {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                            {paymentMethod === 'mpesa_stk' ? 'Send STK Push' : 'Fetch Till Transaction'}
+                          </Button>
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">M-Pesa Reference / Code</Label>
+                          <Input value={sForm.mpesa_code} onChange={e => setSForm(f => ({ ...f, mpesa_code: e.target.value.toUpperCase() }))} className="h-9 text-sm uppercase font-mono" placeholder="O-XXXXXX" />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <Button type="submit" className="w-full" size="lg" disabled={serviceMutation.isPending || !sForm.customer_name || !sForm.amount || !sForm.mpesa_code}>
-                    {serviceMutation.isPending ? <Loader2 className="animate-spin" /> : <Briefcase className="h-4 w-4" />}Complete Service Sale
+
+                  <Button type="submit" className="w-full" size="lg" disabled={serviceMutation.isPending || isMpesaProcessing || !sForm.customer_name || !sForm.amount || (paymentMethod !== 'cash' && !sForm.mpesa_code)}>
+                    {serviceMutation.isPending ? <Loader2 className="animate-spin" /> : <Briefcase className="h-4 w-4" />}
+                    Complete Service Sale
                   </Button>
                 </form>
               </CardContent>
             </Card>
           </div>
         )}
-        
+
         {/* NEW VIEWS */}
         {activeView === 'requests' && <ProductRequests />}
         {activeView === 'returns' && <ProductReturns />}

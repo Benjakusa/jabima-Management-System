@@ -15,10 +15,11 @@ interface EquipmentForm {
   quantity: string;
   condition: string;
   location: string;
+  base_price: string;
 }
 
 const emptyForm: EquipmentForm = {
-  name: '', category: '', quantity: '1', condition: 'good', location: '',
+  name: '', category: '', quantity: '1', condition: 'good', location: '', base_price: '0',
 };
 
 const eqCategories = ['Transport', 'Decoration', 'Ceremony', 'Tools', 'Storage', 'Cleaning', 'Other'];
@@ -54,6 +55,7 @@ const ServiceEquipmentList = () => {
         quantity: parseInt(form.quantity) || 1,
         condition: form.condition,
         location: form.location.trim() || null,
+        base_price: parseFloat(form.base_price) || 0,
       };
       if (editId) {
         const { error } = await supabase.from('inventory_services').update(payload).eq('id', editId);
@@ -102,6 +104,7 @@ const ServiceEquipmentList = () => {
       quantity: String(eq.quantity),
       condition: eq.condition || 'good',
       location: eq.location || '',
+      base_price: String(eq.base_price || 0),
     });
     setEditId(eq.id);
     setShowForm(true);
@@ -163,6 +166,10 @@ const ServiceEquipmentList = () => {
                     ))}
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label>Base Hire Price (Ksh)</Label>
+                  <Input type="number" value={form.base_price} onChange={(e) => setForm(f => ({ ...f, base_price: e.target.value }))} className="h-12" min="0" step="0.01" required />
+                </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Location</Label>
                   <Input value={form.location} onChange={(e) => setForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. Main Warehouse" className="h-12" />
@@ -210,6 +217,7 @@ const ServiceEquipmentList = () => {
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground mt-0.5">
                       <span className="bg-secondary px-2 py-0.5 rounded-md">{eq.category}</span>
                       <span>Qty: {eq.quantity}</span>
+                      <span>Price: Ksh {eq.base_price?.toLocaleString() || 0}</span>
                       {eq.location && <span>{eq.location}</span>}
                     </div>
                   </div>

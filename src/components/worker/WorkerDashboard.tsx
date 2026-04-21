@@ -1,23 +1,27 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Factory, Package, RotateCcw, Wallet, FileText } from 'lucide-react';
+import { LogOut, LayoutDashboard, Factory, Package, RotateCcw, Wallet, FileText, Settings } from 'lucide-react';
 import WorkshopOverview from './WorkshopOverview';
 import WorkshopTasks from './WorkshopTasks';
 import WorkshopMaterialRequests from './WorkshopMaterialRequests';
 import WorkshopMaterialReturns from './WorkshopMaterialReturns';
 import WorkshopWallet from './WorkshopWallet';
+import MyStageSelection from './MyStageSelection';
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
+import ProductionManagement from '@/components/production/ProductionManagement';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'tasks' | 'requests' | 'returns' | 'wallet' | 'report';
+type Tab = 'overview' | 'tasks' | 'requests' | 'returns' | 'wallet' | 'report' | 'stages' | 'production';
 
 const tabs: { id: Tab; label: string; icon: typeof Factory }[] = [
   { id: 'overview', label: 'Home', icon: LayoutDashboard },
   { id: 'tasks', label: 'Tasks', icon: Factory },
   { id: 'requests', label: 'Materials', icon: Package },
   { id: 'returns', label: 'Returns', icon: RotateCcw },
+  { id: 'production', label: 'Production', icon: Factory },
+  { id: 'stages', label: 'My Stages', icon: Settings },
   { id: 'wallet', label: 'Wallet', icon: Wallet },
   { id: 'report', label: 'Report', icon: FileText },
 ];
@@ -50,6 +54,8 @@ const WorkerDashboard = () => {
         {activeTab === 'tasks' && <WorkshopTasks />}
         {activeTab === 'requests' && <WorkshopMaterialRequests />}
         {activeTab === 'returns' && <WorkshopMaterialReturns />}
+        {activeTab === 'production' && <ProductionManagement />}
+        {activeTab === 'stages' && <MyStageSelection />}
         {activeTab === 'wallet' && <WorkshopWallet />}
         {activeTab === 'report' && <DailyReportForm />}
       </div>

@@ -24,7 +24,7 @@ const ProductReturns = () => {
             // Find all products sold by this agent that haven't been returned yet
             const { data, error } = await supabase
                 .from('sales' as any)
-                .select('*, finished_products(*)')
+                .select('*, products(*)')
                 .eq('sales_officer_id', user!.id)
                 .order('created_at', { ascending: false });
             if (error) throw error;
@@ -38,7 +38,7 @@ const ProductReturns = () => {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('product_returns' as any)
-                .select('*, finished_products(product_type)')
+                .select('*, products(product_type)')
                 .eq('sales_officer_id', user!.id)
                 .order('created_at', { ascending: false });
             if (error) throw error;
@@ -128,7 +128,7 @@ const ProductReturns = () => {
                         <Card key={ret.id} className="border">
                             <CardContent className="p-3 flex items-center justify-between">
                                 <div>
-                                    <p className="text-sm font-medium">{ret.finished_products?.product_type || 'Unknown Product'}</p>
+                                    <p className="text-sm font-medium">{ret.products?.product_type || 'Unknown Product'}</p>
                                     <div className="flex items-center gap-3 mt-0.5 text-[9px] text-muted-foreground">
                                         <span className="flex items-center gap-1 capitalize">
                                             {getStatusIcon(ret.status)}

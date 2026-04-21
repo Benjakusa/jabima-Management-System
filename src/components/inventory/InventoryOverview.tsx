@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import StatCard from '@/components/cards/StatCard';
-import { Package, DollarSign, AlertTriangle, Wrench, TrendingDown, Archive } from 'lucide-react';
+import { Package, DollarSign, AlertTriangle, TrendingDown, Truck } from 'lucide-react';
 
 const InventoryOverview = () => {
   const { data: materials } = useQuery({
@@ -12,10 +12,10 @@ const InventoryOverview = () => {
     },
   });
 
-  const { data: equipment } = useQuery({
-    queryKey: ['inventory-services-overview'],
+  const { data: productRequests } = useQuery({
+    queryKey: ['pending-product-requests-overview'],
     queryFn: async () => {
-      const { data } = await supabase.from('inventory_services').select('*');
+      const { data } = await supabase.from('product_requests' as any).select('*').eq('status', 'pending');
       return data || [];
     },
   });
@@ -26,8 +26,7 @@ const InventoryOverview = () => {
   const totalMaterials = materials?.length || 0;
   const lowStockItems = (materials || []).filter(m => m.quantity <= m.min_stock_level);
   const outOfStockItems = (materials || []).filter(m => m.quantity === 0);
-  const totalEquipment = equipment?.length || 0;
-  const equipmentNeedingRepair = (equipment || []).filter(e => e.condition === 'needs_repair');
+  const pendingProductRequests = productRequests?.length || 0;
 
   const formatCurrency = (val: number) => `Ksh ${val.toLocaleString()}`;
 
@@ -55,14 +54,10 @@ const InventoryOverview = () => {
           icon={<TrendingDown className="h-5 w-5" />}
         />
         <StatCard
-          title="Service Equipment"
-          value={totalEquipment}
-          icon={<Wrench className="h-5 w-5" />}
-        />
-        <StatCard
-          title="Needs Repair"
-          value={equipmentNeedingRepair.length}
-          icon={<Archive className="h-5 w-5" />}
+          title="Product Req (Pending)"
+          value={pendingProductRequests}
+          icon={<Truck className="h-5 w-5" />}
+          className={pendingProductRequests > 0 ? "border-primary/50 bg-primary/5" : ""}
         />
       </div>
 

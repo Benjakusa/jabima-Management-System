@@ -3,13 +3,13 @@ import AppShell from '@/components/layout/AppShell';
 import AdminDashboard from '@/components/admin/AdminDashboard';
 import UserManagement from '@/components/admin/UserManagement';
 import InventoryManagement from '@/components/inventory/InventoryManagement';
-import ProductionManagement from '@/components/production/ProductionManagement';
 import SalesManagement from '@/components/sales/SalesManagement';
 import WalletManagement from '@/components/wallet/WalletManagement';
 import ReportsManagement from '@/components/reports/ReportsManagement';
 import ExpenseManagement from '@/components/expenses/ExpenseManagement';
 import SettingsManagement from '@/components/settings/SettingsManagement';
 import DailyReportsOverview from '@/components/admin/DailyReportsOverview';
+import ProductionManagement from '@/components/production/ProductionManagement';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');

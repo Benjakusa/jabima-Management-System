@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X, Loader2, Search, Factory, Eye, ArrowRight, CheckCircle, Package } from 'lucide-react';
+import { Plus, X, Loader2, Search, Factory, Eye, ArrowRight, CheckCircle, Package, Hash } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { STAGES } from './ProductionPipeline';
 
@@ -27,6 +27,17 @@ const materialTypes = ['Oak', 'Mahogany', 'Pine', 'MDF', 'Cypress', 'Paulownia']
 interface Props {
   onViewProduct: (id: string) => void;
 }
+
+const generateBatchNumber = async (): Promise<string> => {
+  const year = new Date().getFullYear();
+  const { count, error } = await supabase
+    .from('production_orders')
+    .select('*', { count: 'exact', head: true })
+    .like('batch_number', `BATCH-${year}-%`);
+  if (error) return `BATCH-${year}-001`;
+  const nextNum = (count || 0) + 1;
+  return `BATCH-${year}-${String(nextNum).padStart(3, '0')}`;
+};
 
 const ProductionOrdersList = ({ onViewProduct }: Props) => {
   const [showForm, setShowForm] = useState(false);
@@ -56,18 +67,24 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
     },
   });
 
+  useEffect(() => {
+    if (showForm && !batchNumber) {
+      generateBatchNumber().then(setBatchNumber);
+    }
+  }, [showForm]);
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const type = productType === 'Custom Order' ? customType.trim() : productType;
       if (!type) throw new Error('Product type is required');
       const qty = parseInt(quantity) || 1;
       if (qty < 1 || qty > 100) throw new Error('Quantity must be between 1 and 100');
-      const batch = batchNumber.trim() || `BATCH-${Date.now().toString(36).toUpperCase()}`;
+      if (!batchNumber) throw new Error('Batch number is required');
 
       const { data, error } = await supabase.rpc('create_production_batch', {
         p_product_type: type,
         p_quantity: qty,
-        p_batch_number: batch,
+        p_batch_number: batchNumber,
         p_notes: notes.trim() || null,
         p_expected_completion_date: expectedDate || null,
         p_created_by: user?.id || null,
@@ -77,14 +94,14 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
     },
     onSuccess: (data) => {
       const count = Array.isArray(data) ? data.length : 1;
-      toast({ title: `${count} production order${count > 1 ? 's' : ''} created` });
-      setShowForm(false);
+      toast({ title: `${count} production order${count > 1 ? 's' : ''} created`, description: `Batch: ${batchNumber}` });
       setProductType('');
       setCustomType('');
       setQuantity('1');
       setBatchNumber('');
       setNotes('');
       setExpectedDate('');
+      generateBatchNumber().then(setBatchNumber);
       queryClient.invalidateQueries({ queryKey: ['production-orders-list'] });
       queryClient.invalidateQueries({ queryKey: ['production-orders-pipeline'] });
     },
@@ -206,8 +223,16 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Batch Number</Label>
-                  <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="e.g. BATCH-001" />
+                  <div className="flex items-center gap-2">
+                    <Label>Batch Number</Label>
+                    <span className="text-[10px] text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">Auto-generated</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input value={batchNumber} readOnly className="bg-muted/50 font-mono" placeholder="Generating..." />
+                    <Button type="button" variant="outline" size="icon" onClick={() => generateBatchNumber().then(setBatchNumber)} className="shrink-0">
+                      <Hash className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
 

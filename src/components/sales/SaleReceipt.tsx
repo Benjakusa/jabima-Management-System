@@ -68,10 +68,11 @@ const SaleReceipt = ({ saleId, type }: Props) => {
     if (!sale) return;
     const amount = type === 'product' ? (sale as any).selling_price : (sale as any).amount;
     const itemName = type === 'product' ? (sale as any).product_type : (sale as any).service_name;
-    const text = `${COMPANY.name}\nTel: ${COMPANY.phone}\nEmail: ${COMPANY.email}\n\nSALES RECEIPT\nReceipt #${sale.id.slice(0, 8).toUpperCase()}\n\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\nAmount: Ksh ${amount.toLocaleString()}\nCustomer: ${sale.customer_name}\n${sale.customer_phone ? `Phone: ${sale.customer_phone}\n` : ''}MPESA: ${sale.mpesa_code}\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nServed by: ${officerProfile?.full_name || 'Staff'}\n\nThank you for choosing Jabima Funeral Directors.`;
+    const method = (sale as any).payment_method || 'M-Pesa';
+    const text = `${COMPANY.name}\nTel: ${COMPANY.phone}\nEmail: ${COMPANY.email}\n\nSALES RECEIPT\nReceipt #${sale.id.slice(0, 8).toUpperCase()}\n\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\nAmount: Ksh ${amount.toLocaleString()}\nMethod: ${method.toUpperCase()}\nCustomer: ${sale.customer_name}\n${sale.customer_phone ? `Phone: ${sale.customer_phone}\n` : ''}Ref: ${sale.mpesa_code}\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nServed by: ${officerProfile?.full_name || 'Staff'}\n\nThank you for choosing Jabima Funeral Directors.`;
 
     if (navigator.share) {
-      try { await navigator.share({ title: 'Jabima Receipt', text }); } catch {}
+      try { await navigator.share({ title: 'Jabima Receipt', text }); } catch { }
     } else {
       await navigator.clipboard.writeText(text);
     }
@@ -81,9 +82,11 @@ const SaleReceipt = ({ saleId, type }: Props) => {
     return <div className="bg-card rounded-2xl border p-8 animate-pulse h-96" />;
   }
 
-  const amount = type === 'product' ? (sale as any).selling_price : (sale as any).amount;
-  const itemName = type === 'product' ? (sale as any).product_type : (sale as any).service_name;
+  const s = sale as any;
+  const amount = type === 'product' ? s.selling_price : s.amount;
+  const itemName = type === 'product' ? s.product_type : s.service_name;
   const itemLabel = type === 'product' ? 'Product' : 'Service';
+  const paymentMethodDisplay = (s.payment_method || 'mpesa').replace('_', ' ').toUpperCase();
 
   return (
     <div className="space-y-4">
@@ -123,11 +126,11 @@ const SaleReceipt = ({ saleId, type }: Props) => {
             <Row label="Date" value={new Date(sale.created_at).toLocaleDateString('en-KE', { dateStyle: 'long' })} />
             <Row label="Time" value={new Date(sale.created_at).toLocaleTimeString('en-KE', { timeStyle: 'short' })} />
             <Row label={itemLabel} value={itemName} />
-            {type === 'product' && (sale as any).finished_product_id && (
-              <Row label="Product ID" value={(sale as any).finished_product_id.slice(0, 8)} mono />
+            {type === 'product' && s.finished_product_id && (
+              <Row label="Product ID" value={s.finished_product_id.slice(0, 8)} mono />
             )}
-            {type === 'service' && (sale as any).description && (
-              <Row label="Details" value={(sale as any).description} />
+            {type === 'service' && s.description && (
+              <Row label="Details" value={s.description} />
             )}
           </div>
 
@@ -141,14 +144,20 @@ const SaleReceipt = ({ saleId, type }: Props) => {
           <div className="receipt-divider" />
 
           <div className="space-y-3">
-            <Row label="Payment Method" value="M-PESA" />
-            <Row label="Transaction Code" value={sale.mpesa_code} mono />
+            <Row label="Payment Method" value={paymentMethodDisplay} />
+            <Row label="Reference Code" value={sale.mpesa_code} mono />
+            {s.payment_method === 'cash' && (
+              <>
+                <Row label="Cash Received" value={`Ksh ${s.amount_received?.toLocaleString() || '0'}`} />
+                <Row label="Change Given" value={`Ksh ${s.change_given?.toLocaleString() || '0'}`} />
+              </>
+            )}
           </div>
 
           <div className="receipt-divider" />
 
           <div className="bg-success/5 border border-success/20 rounded-xl p-4 text-center">
-            <p className="text-xs text-muted-foreground mb-1">AMOUNT PAID</p>
+            <p className="text-xs text-muted-foreground mb-1">TOTAL AMOUNT</p>
             <p className="text-3xl font-bold font-display text-success">Ksh {amount.toLocaleString()}</p>
           </div>
 

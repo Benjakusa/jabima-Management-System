@@ -2,11 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { User, Wallet, Briefcase, ClipboardList, ShoppingCart, FileText } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatStage, formatCurrency } from '@/lib/utils';
 import type { UserWithRole } from './UserManagement';
 import { roleLabels } from './UserManagement';
-
-const fmt = (v: number) => `Ksh ${v.toLocaleString()}`;
 
 interface Props {
   user: UserWithRole;
@@ -63,7 +61,6 @@ const WorkerProfileView = ({ user, branches }: Props) => {
     commission: 'Commission',
   };
 
-  const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const totalEarnings = wallet ? wallet.pending_earnings + wallet.approved_earnings + wallet.paid_earnings : 0;
 
   return (
@@ -93,10 +90,10 @@ const WorkerProfileView = ({ user, branches }: Props) => {
         <CardContent>
           {wallet ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-              <div><p className="text-muted-foreground text-xs">Total Earnings</p><p className="font-bold text-foreground">{fmt(totalEarnings)}</p></div>
-              <div><p className="text-muted-foreground text-xs">Pending</p><p className="font-bold text-warning">{fmt(wallet.pending_earnings)}</p></div>
-              <div><p className="text-muted-foreground text-xs">Approved</p><p className="font-bold text-success">{fmt(wallet.approved_earnings)}</p></div>
-              <div><p className="text-muted-foreground text-xs">Paid</p><p className="font-bold text-muted-foreground">{fmt(wallet.paid_earnings)}</p></div>
+              <div><p className="text-muted-foreground text-xs">Total Earnings</p><p className="font-bold text-foreground">{formatCurrency(totalEarnings)}</p></div>
+              <div><p className="text-muted-foreground text-xs">Pending</p><p className="font-bold text-warning">{formatCurrency(wallet.pending_earnings)}</p></div>
+              <div><p className="text-muted-foreground text-xs">Approved</p><p className="font-bold text-success">{formatCurrency(wallet.approved_earnings)}</p></div>
+              <div><p className="text-muted-foreground text-xs">Paid</p><p className="font-bold text-muted-foreground">{formatCurrency(wallet.paid_earnings)}</p></div>
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">No wallet found</p>
@@ -119,7 +116,7 @@ const WorkerProfileView = ({ user, branches }: Props) => {
                     {c.stage && <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-md ml-1">{formatStage(c.stage)}</span>}
                     {c.description && <p className="text-xs text-muted-foreground mt-1">{c.description}</p>}
                   </div>
-                  <span className="font-bold text-success text-sm">{fmt(c.amount)}</span>
+                  <span className="font-bold text-success text-sm">{formatCurrency(c.amount)}</span>
                 </div>
               ))}
             </div>
@@ -167,7 +164,7 @@ const WorkerProfileView = ({ user, branches }: Props) => {
                     <p className="font-medium text-foreground">{s.product_type} — {s.customer_name}</p>
                     <p className="text-xs text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</p>
                   </div>
-                  <span className="font-bold text-success">{fmt(s.selling_price)}</span>
+                  <span className="font-bold text-success">{formatCurrency(s.selling_price)}</span>
                 </div>
               ))}
             </div>

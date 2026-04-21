@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Wallet, Clock, CheckCircle, Banknote } from 'lucide-react';
-
-const fmt = (v: number) => `Ksh ${v.toLocaleString()}`;
+import { formatCurrency } from '@/lib/utils';
 
 const WorkshopWallet = () => {
   const { user } = useAuth();
@@ -48,10 +47,10 @@ const WorkshopWallet = () => {
   const totalEarnings = wallet.pending_earnings + wallet.approved_earnings + wallet.paid_earnings;
 
   const stats = [
-    { label: 'Total Earnings', value: fmt(totalEarnings), icon: Wallet, color: 'text-primary' },
-    { label: 'Pending', value: fmt(wallet.pending_earnings), icon: Clock, color: 'text-warning' },
-    { label: 'Approved', value: fmt(wallet.approved_earnings), icon: CheckCircle, color: 'text-success' },
-    { label: 'Paid Out', value: fmt(wallet.paid_earnings), icon: Banknote, color: 'text-muted-foreground' },
+    { label: 'Total Earnings', value: formatCurrency(totalEarnings), icon: Wallet, color: 'text-primary' },
+    { label: 'Pending', value: formatCurrency(wallet.pending_earnings), icon: Clock, color: 'text-warning' },
+    { label: 'Approved', value: formatCurrency(wallet.approved_earnings), icon: CheckCircle, color: 'text-success' },
+    { label: 'Paid Out', value: formatCurrency(wallet.paid_earnings), icon: Banknote, color: 'text-muted-foreground' },
   ];
 
   return (
@@ -88,7 +87,7 @@ const WorkshopWallet = () => {
                   </div>
                   <div className="text-right">
                     <p className={`font-bold text-sm ${txn.type === 'payment' ? 'text-success' : 'text-foreground'}`}>
-                      {fmt(txn.amount)}
+                      {formatCurrency(txn.amount)}
                     </p>
                     <p className="text-[10px] text-muted-foreground">{new Date(txn.created_at).toLocaleDateString()}</p>
                   </div>

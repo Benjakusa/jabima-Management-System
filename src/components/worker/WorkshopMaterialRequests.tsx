@@ -9,9 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Package, Plus, Loader2, Clock, CheckCircle, AlertTriangle, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-const formatStage = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+import { cn, formatStage } from '@/lib/utils';
 
 const WorkshopMaterialRequests = () => {
   const { user } = useAuth();

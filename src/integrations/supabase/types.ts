@@ -43,6 +43,7 @@ export type Database = {
           summary: string | null
           tasks_completed: number | null
           user_id: string
+          completed_tasks: any[]
         }
         Insert: {
           created_at?: string
@@ -51,6 +52,7 @@ export type Database = {
           summary?: string | null
           tasks_completed?: number | null
           user_id: string
+          completed_tasks?: any[]
         }
         Update: {
           created_at?: string
@@ -59,6 +61,7 @@ export type Database = {
           summary?: string | null
           tasks_completed?: number | null
           user_id?: string
+          completed_tasks?: any[]
         }
         Relationships: []
       }
@@ -94,34 +97,52 @@ export type Database = {
       }
       finished_products: {
         Row: {
+          batch_number: string | null
           branch_id: string | null
           completed_at: string
           id: string
           location: string
+          name: string | null
+          notes: string | null
           product_type: string
           production_cost: number
-          production_order_id: string
+          production_order_id: string | null
+          purchase_price: number | null
+          source_type: Database["public"]["Enums"]["product_source"] | null
           status: Database["public"]["Enums"]["product_status"]
+          supplier_name: string | null
         }
         Insert: {
+          batch_number?: string | null
           branch_id?: string | null
           completed_at?: string
           id?: string
           location?: string
+          name?: string | null
+          notes?: string | null
           product_type: string
           production_cost?: number
-          production_order_id: string
+          production_order_id?: string | null
+          purchase_price?: number | null
+          source_type?: Database["public"]["Enums"]["product_source"] | null
           status?: Database["public"]["Enums"]["product_status"]
+          supplier_name?: string | null
         }
         Update: {
+          batch_number?: string | null
           branch_id?: string | null
           completed_at?: string
           id?: string
           location?: string
+          name?: string | null
+          notes?: string | null
           product_type?: string
           production_cost?: number
-          production_order_id?: string
+          production_order_id?: string | null
+          purchase_price?: number | null
+          source_type?: Database["public"]["Enums"]["product_source"] | null
           status?: Database["public"]["Enums"]["product_status"]
+          supplier_name?: string | null
         }
         Relationships: [
           {
@@ -414,6 +435,7 @@ export type Database = {
       }
       production_orders: {
         Row: {
+          assigned_officer_id: string | null
           batch_number: string | null
           completed_at: string | null
           created_at: string
@@ -431,6 +453,7 @@ export type Database = {
           status: Database["public"]["Enums"]["product_status"]
         }
         Insert: {
+          assigned_officer_id?: string | null
           batch_number?: string | null
           completed_at?: string | null
           created_at?: string
@@ -448,6 +471,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["product_status"]
         }
         Update: {
+          assigned_officer_id?: string | null
           batch_number?: string | null
           completed_at?: string | null
           created_at?: string
@@ -679,6 +703,7 @@ export type Database = {
           production_order_id: string
           stage: Database["public"]["Enums"]["production_stage"]
           started_at: string
+          work_status: string
           worker_id: string
         }
         Insert: {
@@ -688,6 +713,7 @@ export type Database = {
           production_order_id: string
           stage: Database["public"]["Enums"]["production_stage"]
           started_at?: string
+          work_status?: string
           worker_id: string
         }
         Update: {
@@ -697,6 +723,7 @@ export type Database = {
           production_order_id?: string
           stage?: Database["public"]["Enums"]["production_stage"]
           started_at?: string
+          work_status?: string
           worker_id?: string
         }
         Relationships: [
@@ -881,6 +908,7 @@ export type Database = {
         | "workshop_worker"
         | "sales_officer"
       payment_type: "daily_wage" | "per_stage" | "per_product" | "commission"
+      product_source: "workshop" | "external"
       product_status: "in_production" | "completed" | "transferred" | "sold"
       production_stage:
         | "wood_cutting"
@@ -1027,6 +1055,7 @@ export const Constants = {
         "sales_officer",
       ],
       payment_type: ["daily_wage", "per_stage", "per_product", "commission"],
+      product_source: ["workshop", "external"],
       product_status: ["in_production", "completed", "transferred", "sold"],
       production_stage: [
         "wood_cutting",

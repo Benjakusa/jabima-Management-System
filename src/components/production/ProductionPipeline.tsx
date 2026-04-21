@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { 
   Scissors, Hammer, LayoutGrid, Wind, Palette, PaintBucket, 
-  Grip, GlassWater, Wrench, CheckCircle 
+  Grip, GlassWater, Wrench, CheckCircle, User 
 } from 'lucide-react';
 import { ReactNode } from 'react';
 
@@ -41,6 +41,14 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
     },
   });
 
+  const { data: profiles } = useQuery({
+    queryKey: ['all-profiles'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('user_id, full_name');
+      return data || [];
+    },
+  });
+
   const { data: completedCount } = useQuery({
     queryKey: ['production-completed-count'],
     queryFn: async () => {
@@ -52,6 +60,11 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
       return count || 0;
     },
   });
+
+  const getOfficerName = (officerId: string | null) => {
+    if (!officerId) return null;
+    return profiles?.find(p => p.user_id === officerId)?.full_name || null;
+  };
 
   if (isLoading) {
     return (
@@ -103,27 +116,39 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
 
             {stage.orders.length > 0 && (
               <div className="p-2 space-y-1">
-                {stage.orders.map((order) => (
-                  <button
-                    key={order.id}
-                    onClick={() => onViewProduct(order.id)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors text-left"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-foreground truncate">{order.product_type}</p>
-                        {order.product_code && (
-                          <Badge variant="outline" className="text-[10px] font-mono shrink-0">{order.product_code}</Badge>
-                        )}
+                {stage.orders.map((order) => {
+                  const officerName = getOfficerName(order.assigned_officer_id);
+                  return (
+                    <button
+                      key={order.id}
+                      onClick={() => onViewProduct(order.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors text-left"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">{order.product_type}</p>
+                          {order.product_code && (
+                            <Badge variant="outline" className="text-[10px] font-mono shrink-0">{order.product_code}</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {order.batch_number && (
+                            <span className="text-xs text-muted-foreground">{order.batch_number}</span>
+                          )}
+                          {officerName && (
+                            <span className="text-xs text-primary flex items-center gap-1">
+                              <User className="h-3 w-3" /> {officerName}
+                            </span>
+                          )}
+                          {!officerName && (
+                            <Badge variant="secondary" className="text-[10px]">Unassigned</Badge>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {order.batch_number && `${order.batch_number} • `}
-                        Started {new Date(order.started_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className="text-xs text-primary font-medium">View →</span>
-                  </button>
-                ))}
+                      <span className="text-xs text-primary font-medium">View →</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 

@@ -24,10 +24,7 @@ const emptyForm: ServiceForm = {
   service_name: '', description: '', amount: '', customer_name: '', customer_phone: '', mpesa_code: '', branch_id: '',
 };
 
-const serviceTypes = [
-  'Body Preservation', 'Body Transport', 'Funeral Arrangement', 'Hearse Service',
-  'Decoration Service', 'Burial Coordination', 'Memorial Service', 'Other',
-];
+// serviceTypes will now be fetched dynamically from inventory_services
 
 interface Props {
   onViewReceipt: (saleId: string) => void;
@@ -54,6 +51,14 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
     queryKey: ['branches-list'],
     queryFn: async () => {
       const { data } = await supabase.from('branches').select('id, name').order('name');
+      return data || [];
+    },
+  });
+
+  const { data: serviceTypes } = useQuery({
+    queryKey: ['inventory-services-types'],
+    queryFn: async () => {
+      const { data } = await supabase.from('inventory_services').select('name, base_price').order('name');
       return data || [];
     },
   });
@@ -129,12 +134,13 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
               <div className="space-y-2">
                 <Label>Service Type *</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {serviceTypes.map(type => (
-                    <button key={type} type="button" onClick={() => setForm(f => ({ ...f, service_name: type }))}
-                      className={`px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors text-center ${
-                        form.service_name === type ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
-                      }`}>{type}</button>
+                  {(serviceTypes || []).map(s => (
+                    <button key={s.name} type="button"
+                      onClick={() => setForm(f => ({ ...f, service_name: s.name, amount: String(s.base_price || '') }))}
+                      className={`px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors text-center ${form.service_name === s.name ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
+                        }`}>{s.name}</button>
                   ))}
+                  {(serviceTypes || []).length === 0 && <p className="text-xs text-muted-foreground col-span-4 py-4 text-center">No services in catalogue — go to the <strong>Catalogue</strong> tab to add services first</p>}
                 </div>
               </div>
 
