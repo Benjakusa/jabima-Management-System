@@ -15,7 +15,7 @@ const InventoryOverview = () => {
   const { data: productRequests } = useQuery({
     queryKey: ['pending-product-requests-overview'],
     queryFn: async () => {
-      const { data } = await supabase.from('product_requests' as any).select('*').eq('status', 'pending');
+      const { data } = await supabase.from('product_requests').select('*').eq('status', 'pending');
       return data || [];
     },
   });

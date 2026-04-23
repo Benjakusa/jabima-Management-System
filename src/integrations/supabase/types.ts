@@ -778,6 +778,143 @@ export type Database = {
         }
         Relationships: []
       }
+      product_requests: {
+        Row: {
+          id: string
+          product_type: string
+          quantity: number
+          sales_officer_id: string
+          branch_id: string | null
+          status: string
+          notes: string | null
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string
+          selected_product_ids: string[]
+        }
+        Insert: {
+          id?: string
+          product_type: string
+          quantity?: number
+          sales_officer_id: string
+          branch_id?: string | null
+          status?: string
+          notes?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+          selected_product_ids?: string[]
+        }
+        Update: {
+          id?: string
+          product_type?: string
+          quantity?: number
+          sales_officer_id?: string
+          branch_id?: string | null
+          status?: string
+          notes?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+          selected_product_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_requests_sales_officer_id_fkey"
+            columns: ["sales_officer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_requests_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      product_returns: {
+        Row: {
+          id: string
+          finished_product_id: string
+          sales_officer_id: string
+          reason: string | null
+          status: string
+          processed_by: string | null
+          processed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          finished_product_id: string
+          sales_officer_id: string
+          reason?: string | null
+          status?: string
+          processed_by?: string | null
+          processed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          finished_product_id?: string
+          sales_officer_id?: string
+          reason?: string | null
+          status?: string
+          processed_by?: string | null
+          processed_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_returns_finished_product_id_fkey"
+            columns: ["finished_product_id"]
+            isOneToOne: false
+            referencedRelation: "finished_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_returns_sales_officer_id_fkey"
+            columns: ["sales_officer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      sales_agent_services: {
+        Row: {
+          id: string
+          sales_officer_id: string
+          service_name: string
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          sales_officer_id: string
+          service_name: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          sales_officer_id?: string
+          service_name?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_agent_services_sales_officer_id_fkey"
+            columns: ["sales_officer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       wallet_transactions: {
         Row: {
           amount: number

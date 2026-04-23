@@ -37,8 +37,8 @@ const ProductReturns = () => {
         queryKey: ['my-product-returns', user?.id],
         queryFn: async () => {
             const { data, error } = await supabase
-                .from('product_returns' as any)
-                .select('*, products(product_type)')
+                .from('product_returns')
+                .select('*, finished_products(product_type)')
                 .eq('sales_officer_id', user!.id)
                 .order('created_at', { ascending: false });
             if (error) throw error;
@@ -50,7 +50,7 @@ const ProductReturns = () => {
     const returnMutation = useMutation({
         mutationFn: async () => {
             if (!finishedProductId) throw new Error('Please select a product to return');
-            const { error } = await supabase.from('product_returns' as any).insert({
+            const { error } = await supabase.from('product_returns').insert({
                 finished_product_id: finishedProductId,
                 sales_officer_id: user!.id,
                 reason: reason.trim() || null,

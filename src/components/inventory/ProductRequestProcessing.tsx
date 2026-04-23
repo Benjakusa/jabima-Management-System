@@ -80,7 +80,8 @@ const ProductRequestProcessing = () => {
             let query = supabase
                 .from('finished_products')
                 .select('id, product_type, batch_number, production_cost, completed_at, production_orders(batch_number)')
-                .eq('status', 'completed');
+                .eq('status', 'completed')
+                .not('status', 'is', 'sold');
 
             const { data: existingInShop } = await supabase
                 .from('shop_inventory')

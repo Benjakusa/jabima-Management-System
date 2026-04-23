@@ -50,14 +50,7 @@ const RoleRouter = () => {
     case 'inventory_officer':
       return <InventoryOfficerDashboard />;
     default:
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4">
-          <div className="text-center">
-            <h1 className="font-display text-xl font-bold text-foreground mb-2">No Role Assigned</h1>
-            <p className="text-muted-foreground">Please contact your administrator.</p>
-          </div>
-        </div>
-      );
+      return <SalesDashboard />;
   }
 };
 

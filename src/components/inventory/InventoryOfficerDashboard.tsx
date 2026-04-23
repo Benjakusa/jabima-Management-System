@@ -47,7 +47,7 @@ const InventoryOfficerDashboard = () => {
     queryKey: ['pending-product-requests-count'],
     queryFn: async () => {
       const { count, error } = await supabase
-        .from('product_requests' as any)
+        .from('product_requests')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending');
       if (error) return 0;

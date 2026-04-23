@@ -36,11 +36,11 @@ const ServiceManagement = () => {
         queryKey: ['my-available-services', user?.id],
         queryFn: async () => {
             const { data, error } = await supabase
-                .from('sales_agent_services' as any)
+                .from('sales_agent_services')
                 .select('*')
                 .eq('sales_officer_id', user!.id);
             if (error) throw error;
-            return (data || []) as any[];
+            return data || [];
         },
         enabled: !!user,
     });
@@ -60,7 +60,7 @@ const ServiceManagement = () => {
             if (error) throw error;
             // Auto-enable for this officer
             if (data) {
-                await supabase.from('sales_agent_services' as any).insert({
+                await supabase.from('sales_agent_services').insert({
                     sales_officer_id: user!.id,
                     service_name: data.name,
                     is_active: true,
@@ -80,16 +80,16 @@ const ServiceManagement = () => {
     // Toggle a service on/off in the officer's POS
     const toggleServiceMutation = useMutation({
         mutationFn: async ({ name, active }: { name: string; active: boolean }) => {
-            const existing = (myServices as any[])?.find(s => s.service_name === name);
+            const existing = myServices?.find(s => s.service_name === name);
             if (existing) {
                 const { error } = await supabase
-                    .from('sales_agent_services' as any)
+                    .from('sales_agent_services')
                     .update({ is_active: !active })
                     .eq('id', existing.id);
                 if (error) throw error;
             } else {
                 const { error } = await supabase
-                    .from('sales_agent_services' as any)
+                    .from('sales_agent_services')
                     .insert({ sales_officer_id: user!.id, service_name: name, is_active: true });
                 if (error) throw error;
             }

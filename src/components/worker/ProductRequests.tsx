@@ -37,7 +37,7 @@ const ProductRequests = () => {
         queryKey: ['my-product-requests', user?.id],
         queryFn: async () => {
             const { data, error } = await supabase
-                .from('product_requests' as any)
+                .from('product_requests')
                 .select('*, branches(name)')
                 .eq('sales_officer_id', profile!.id)
                 .order('created_at', { ascending: false });
@@ -57,7 +57,7 @@ const ProductRequests = () => {
 
             // Get all products currently picked in pending or approved requests
             const { data: pendingRequests } = await supabase
-                .from('product_requests' as any)
+                .from('product_requests')
                 .select('selected_product_ids')
                 .in('status', ['pending', 'approved']);
 
@@ -97,7 +97,7 @@ const ProductRequests = () => {
             const types = Array.from(new Set(items.map((p: any) => p.product_type)));
             const derivedType = types.length === 1 ? types[0] : 'Mixed';
 
-            const { error } = await supabase.from('product_requests' as any).insert({
+            const { error } = await supabase.from('product_requests').insert({
                 product_type: derivedType,
                 quantity: selectedProductIds.length,
                 sales_officer_id: profile!.id,

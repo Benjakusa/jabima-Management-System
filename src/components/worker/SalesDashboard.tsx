@@ -56,38 +56,30 @@ const SalesDashboard = () => {
     queryFn: async () => {
       const branchId = profile?.branch_id;
 
-      let query = supabase
-        .from('finished_products')
-        .select('id, product_type, production_cost, completed_at, branch_id, batch_number')
-        .in('status', ['completed', 'transferred'])
-        .order('completed_at', { ascending: false });
-
-      // If officer has a branch, only show products for that branch
+      // If officer has a branch, show products ONLY from shop_inventory (fulfilled to their branch)
       if (branchId) {
-        query = query.eq('branch_id', branchId);
+        const { data: shopItems } = await supabase
+          .from('shop_inventory')
+          .select('finished_product_id, finished_products(id, product_type, production_cost, completed_at, batch_number)')
+          .eq('branch_id', branchId);
+        
+        if (shopItems && shopItems.length > 0) {
+          return shopItems.map((s: any) => s.finished_products).filter(Boolean);
+        }
+        return [];
       }
 
-      const { data, error } = await query;
+      // No branch - show all completed products from main warehouse
+      const { data, error } = await supabase
+        .from('finished_products')
+        .select('id, product_type, production_cost, completed_at, branch_id, batch_number')
+        .eq('status', 'completed')
+        .is('branch_id', null)
+        .order('completed_at', { ascending: false });
 
       if (error) {
         console.error('Error loading products:', error);
         throw error;
-      }
-
-      // Get shop_inventory IDs for these products
-      if (data && data.length > 0) {
-        const productIds = data.map(p => p.id);
-        const { data: shopData } = await supabase
-          .from('shop_inventory')
-          .select('id, finished_product_id')
-          .in('finished_product_id', productIds);
-
-        const shopMap = new Map((shopData || []).map(s => [s.finished_product_id, s.id]));
-
-        return data.map((p: any) => ({
-          ...p,
-          shop_inventory_id: shopMap.get(p.id)
-        }));
       }
 
       return data || [];

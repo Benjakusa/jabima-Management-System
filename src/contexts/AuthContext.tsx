@@ -28,7 +28,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
       supabase.from('profiles').select('id, full_name, email, phone, branch_id').eq('user_id', userId).maybeSingle(),
     ]);
-    if (roleRes.data) setRole(roleRes.data.role as AppRole);
+
+    let resolvedRole = roleRes.data?.role as AppRole | null;
+
+    // Bootstrap Admin: Force admin role for the primary management email
+    if (profileRes.data?.email === 'info@jabimafuneraldirectors.co.ke') {
+      resolvedRole = 'admin';
+    }
+
+    if (resolvedRole) setRole(resolvedRole);
     if (profileRes.data) setProfile(profileRes.data as any);
   };
 

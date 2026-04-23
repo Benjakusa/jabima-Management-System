@@ -15,6 +15,8 @@ type SourceMode = 'workshop' | 'external';
 
 interface WorkshopForm {
     product_type: string;
+    custom_name: string;
+    batch_number: string;
     production_cost: string;
     location: string;
     branch_id: string;
@@ -22,6 +24,8 @@ interface WorkshopForm {
 
 interface ExternalForm {
     product_type: string;
+    custom_name: string;
+    batch_number: string;
     purchase_price: string;
     supplier_name: string;
     quantity: string;
@@ -31,11 +35,11 @@ interface ExternalForm {
 }
 
 const emptyWorkshop: WorkshopForm = {
-    product_type: '', production_cost: '0', location: 'main_warehouse', branch_id: '',
+    product_type: '', custom_name: '', batch_number: '', production_cost: '0', location: 'main_warehouse', branch_id: '',
 };
 
 const emptyExternal: ExternalForm = {
-    product_type: '', purchase_price: '0', supplier_name: '', quantity: '1',
+    product_type: 'Custom Order', custom_name: '', batch_number: '', purchase_price: '0', supplier_name: '', quantity: '1',
     location: 'main_warehouse', branch_id: '', notes: '',
 };
 
@@ -92,18 +96,19 @@ const FinishedProductsList = () => {
                 const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2);
                 const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
                 const baseBatch = `EXT-${dateStr}-${randomStr}`;
-                const rows = Array.from({ length: qty }, (_, i) => ({
-                    name: externalForm.product_type,
-                    product_type: externalForm.product_type,
-                    purchase_price: parseFloat(externalForm.purchase_price) || 0,
+                const finalType = externalForm.product_type === 'Custom Order' 
+                    ? externalForm.custom_name.trim() 
+                    : externalForm.product_type;
+                const rows = Array.from({ length: qty }, (_, i): any => ({
+                    product_type: finalType,
                     production_cost: 0,
-                    supplier_name: externalForm.supplier_name.trim() || null,
-                    source_type: 'external' as const,
                     branch_id: externalForm.branch_id || null,
-                    notes: externalForm.notes.trim() || null,
-                    status: 'completed' as const,
+                    status: 'completed',
                     completed_at: new Date().toISOString(),
-                    production_order_id: null,
+                    location: externalForm.location || 'main_warehouse',
+                    purchase_price: parseFloat(externalForm.purchase_price) || 0,
+                    supplier_name: externalForm.supplier_name.trim() || null,
+                    notes: externalForm.notes.trim() || null,
                     batch_number: qty === 1 ? baseBatch : `${baseBatch}-${i + 1}`,
                 }));
 
@@ -115,18 +120,20 @@ const FinishedProductsList = () => {
                     if (error) throw error;
                 }
             } else {
-                const payload = {
-                    name: workshopForm.product_type,
-                    product_type: workshopForm.product_type,
+                const finalType = workshopForm.product_type === 'Custom Order'
+                    ? workshopForm.custom_name.trim()
+                    : workshopForm.product_type;
+                const payload: any = {
+                    product_type: finalType,
                     production_cost: parseFloat(workshopForm.production_cost) || 0,
-                    source_type: 'workshop' as const,
                     branch_id: workshopForm.branch_id || null,
-                    status: 'completed' as const,
+                    status: 'completed',
                     completed_at: new Date().toISOString(),
-                    purchase_price: null,
-                    supplier_name: null,
-                    notes: null,
+                    location: workshopForm.location || 'main_warehouse',
                 };
+                if (workshopForm.batch_number) {
+                    payload.batch_number = workshopForm.batch_number;
+                }
                 if (editId) {
                     const { error } = await supabase.from('finished_products').update(payload).eq('id', editId);
                     if (error) throw error;
@@ -174,11 +181,14 @@ const FinishedProductsList = () => {
     };
 
     const startEdit = (product: any) => {
-        const src: SourceMode = product.source_type === 'external' ? 'external' : 'workshop';
+        const src: SourceMode = (product.source_type === 'external' || (!product.source_type && product.purchase_price && !product.production_cost)) ? 'external' : 'workshop';
         setMode(src);
         if (src === 'external') {
+            const isCustom = productTypes.every(t => t !== product.product_type);
             setExternalForm({
-                product_type: product.product_type || '',
+                product_type: isCustom ? 'Custom Order' : product.product_type || '',
+                custom_name: isCustom ? product.product_type : '',
+                batch_number: product.batch_number || '',
                 purchase_price: String(product.purchase_price || 0),
                 supplier_name: product.supplier_name || '',
                 quantity: '1',
@@ -187,8 +197,11 @@ const FinishedProductsList = () => {
                 notes: product.notes || '',
             });
         } else {
+            const isCustom = productTypes.every(t => t !== product.product_type);
             setWorkshopForm({
-                product_type: product.product_type || '',
+                product_type: isCustom ? 'Custom Order' : product.product_type || '',
+                custom_name: isCustom ? product.product_type : '',
+                batch_number: product.batch_number || '',
                 production_cost: String(product.production_cost || 0),
                 location: product.location || 'main_warehouse',
                 branch_id: product.branch_id || '',
@@ -212,9 +225,12 @@ const FinishedProductsList = () => {
 
     const isExternalFormValid =
         externalForm.product_type.trim() !== '' &&
+        (externalForm.product_type !== 'Custom Order' || externalForm.custom_name.trim() !== '') &&
         parseInt(externalForm.quantity) >= 1;
 
-    const isWorkshopFormValid = workshopForm.product_type.trim() !== '';
+    const isWorkshopFormValid = 
+        workshopForm.product_type.trim() !== '' &&
+        (workshopForm.product_type !== 'Custom Order' || workshopForm.custom_name.trim() !== '');
 
     // ── Render ─────────────────────────────────────────────────────────────
 
@@ -305,79 +321,45 @@ const FinishedProductsList = () => {
                                 </div>
                             </div>
 
-                            {/* ── External-only fields ── */}
-                            {mode === 'external' && (
-                                <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <Label>Quantity</Label>
-                                            <Input
-                                                type="number"
-                                                min="1"
-                                                value={externalForm.quantity}
-                                                onChange={e => setExternalForm(f => ({ ...f, quantity: e.target.value }))}
-                                                className="h-12"
-                                                required
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Purchase Price (Ksh)</Label>
-                                            <Input
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                value={externalForm.purchase_price}
-                                                onChange={e => setExternalForm(f => ({ ...f, purchase_price: e.target.value }))}
-                                                className="h-12"
-                                            />
-                                        </div>
-                                    </div>
+                            {/* Custom name input for Custom Order */}
+                            {mode === 'external' && externalForm.product_type === 'Custom Order' && (
+                                <div className="space-y-2">
+<Label>Custom Product Name</Label>
+                                    <Input
+                                        value={externalForm.custom_name}
+                                        onChange={e => setExternalForm(f => ({ ...f, custom_name: e.target.value }))}
+                                        placeholder="Enter custom product name"
+                                        className="h-12"
+                                        required
+                                    />
+                                </div>
+                            )}
 
-                                    <div className="space-y-2">
-                                        <Label>Supplier / Source <span className="text-muted-foreground text-[10px]">(optional)</span></Label>
-                                        <Input
-                                            value={externalForm.supplier_name}
-                                            onChange={e => setExternalForm(f => ({ ...f, supplier_name: e.target.value }))}
-                                            placeholder="e.g. Nairobi Casket Suppliers"
-                                            className="h-12"
-                                        />
-                                    </div>
+                            <div className="space-y-2">
+                                <Label>Batch Number <span className="text-muted-foreground text-[10px]">(optional)</span></Label>
+                                <Input
+                                    value={mode === 'external' ? externalForm.batch_number : workshopForm.batch_number}
+                                    onChange={e => mode === 'external' 
+                                        ? setExternalForm(f => ({ ...f, batch_number: e.target.value }))
+                                        : setWorkshopForm(f => ({ ...f, batch_number: e.target.value }))
+                                    }
+                                    placeholder="e.g. BATCH-2026-001"
+                                    className="h-12"
+                                />
+                            </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <Label>Storage Location</Label>
-                                            <Input
-                                                value={externalForm.location}
-                                                onChange={e => setExternalForm(f => ({ ...f, location: e.target.value }))}
-                                                placeholder="e.g. Aisle 4, Shelf B"
-                                                className="h-12"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label>Branch (if assigned)</Label>
-                                            <select
-                                                value={externalForm.branch_id}
-                                                onChange={e => setExternalForm(f => ({ ...f, branch_id: e.target.value }))}
-                                                className="w-full h-12 rounded-lg border border-input bg-background px-3 text-sm"
-                                            >
-                                                <option value="">Main Warehouse / Unassigned</option>
-                                                {(branches || []).map(b => (
-                                                    <option key={b.id} value={b.id}>{b.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label>Notes <span className="text-muted-foreground text-[10px]">(optional)</span></Label>
-                                        <Input
-                                            value={externalForm.notes}
-                                            onChange={e => setExternalForm(f => ({ ...f, notes: e.target.value }))}
-                                            placeholder="Any extra details..."
-                                            className="h-12"
-                                        />
-                                    </div>
-                                </>
+                            {/* Custom name input for workshop Custom Order */}
+                            {mode === 'workshop' && workshopForm.product_type === 'Custom Order' && (
+                                <div className="space-y-2">
+                                    <Label>Custom Product Name</Label>
+                                    <Input
+                                        value={workshopForm.custom_name}
+                                        onChange={e => setWorkshopForm(f => ({ ...f, custom_name: e.target.value }))}
+                                        placeholder="Enter custom product name"
+                                        className="h-12"
+                                        required
+                                    />
+                                </div>
                             )}
 
                             {/* ── Workshop-only fields ── */}

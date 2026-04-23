@@ -53,7 +53,8 @@ const ProductSalesList = ({ onViewReceipt }: Props) => {
       const { data } = await supabase
         .from('finished_products')
         .select('id, product_type, production_cost')
-        .eq('status', 'completed');
+        .eq('status', 'completed')
+        .not('status', 'is', 'sold');
       return data || [];
     },
   });

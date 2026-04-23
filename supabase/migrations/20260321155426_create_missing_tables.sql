@@ -7,27 +7,58 @@ CREATE TABLE IF NOT EXISTS public.product_requests (
     quantity INTEGER NOT NULL DEFAULT 1,
     sales_officer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'fulfilled', 'rejected')),
+    selected_product_ids UUID[] DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
     notes TEXT,
     approved_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     approved_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Add column if table already exists (try both singular and plural)
+ALTER TABLE product_requests ADD COLUMN IF NOT EXISTS selected_product_ids UUID[] DEFAULT '{}';
+
 -- Enable RLS for product_requests
 ALTER TABLE public.product_requests ENABLE ROW LEVEL SECURITY;
 
--- Policies for product_requests
-CREATE POLICY "Sales officers can view their own requests"
-ON public.product_requests FOR SELECT
-USING (auth.uid() = sales_officer_id);
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Sales officers can view their own requests" ON product_requests;
+DROP POLICY IF EXISTS "Sales officers can create their own requests" ON product_requests;
+DROP POLICY IF EXISTS "Inventory officers and admins can view all requests" ON product_requests;
+DROP POLICY IF EXISTS "Inventory officers and admins can update requests" ON product_requests;
 
-CREATE POLICY "Sales officers can create their own requests"
-ON public.product_requests FOR INSERT
-WITH CHECK (auth.uid() = sales_officer_id);
+-- Simpler policies for product_requests
+CREATE POLICY "Anyone authenticated can insert product_requests"
+ON product_requests FOR INSERT
+WITH CHECK (true);
 
-CREATE POLICY "Inventory officers and admins can view all requests"
-ON public.product_requests FOR SELECT
+CREATE POLICY "Anyone authenticated can view product_requests"
+ON product_requests FOR SELECT
+USING (true);
+
+CREATE POLICY "Anyone authenticated can update product_requests"
+ON product_requests FOR UPDATE
+USING (true);
+
+-- 2. Create shop_inventory table (if needed)
+CREATE TABLE IF NOT EXISTS public.shop_inventory (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    finished_product_id UUID NOT NULL REFERENCES public.finished_products(id) ON DELETE CASCADE,
+    branch_id UUID NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+    transferred_at TIMESTAMPTZ DEFAULT now(),
+    transferred_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL
+);
+
+-- Fix shop_inventory policies - allow inventory_officer and admin
+DROP POLICY IF EXISTS "Read shop inventory" ON shop_inventory;
+DROP POLICY IF EXISTS "Admins manage shop inventory" ON shop_inventory;
+
+CREATE POLICY "Anyone authenticated can read shop_inventory"
+ON shop_inventory FOR SELECT
+USING (true);
+
+CREATE POLICY "Inventory officers and admins can manage shop_inventory"
+ON shop_inventory FOR ALL
 USING (
     EXISTS (
         SELECT 1 FROM public.profiles
@@ -35,19 +66,6 @@ USING (
         AND profiles.role IN ('inventory_officer', 'admin')
     )
 );
-
-CREATE POLICY "Inventory officers and admins can update requests"
-ON public.product_requests FOR UPDATE
-USING (
-    EXISTS (
-        SELECT 1 FROM public.profiles
-        WHERE profiles.id = auth.uid()
-        AND profiles.role IN ('inventory_officer', 'admin')
-    )
-);
-
--- 2. Create product_returns table
-CREATE TABLE IF NOT EXISTS public.product_returns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     finished_product_id UUID NOT NULL REFERENCES public.finished_products(id) ON DELETE CASCADE,
     sales_officer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
