@@ -18,26 +18,18 @@ const WorkshopMaterialReturns = () => {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ production_order_id: '', material_id: '', quantity_returned: '', reason: 'excess' });
 
-  const { data: assignments } = useQuery({
-    queryKey: ['my-assignments', user?.id],
-    queryFn: async () => {
-      const { data } = await supabase.from('stage_assignments').select('stage').eq('user_id', user!.id);
-      return data?.map(a => a.stage) || [];
-    },
-    enabled: !!user,
-  });
-
+  // Load all production orders in production
   const { data: activeOrders } = useQuery({
-    queryKey: ['my-active-orders-returns', assignments],
+    queryKey: ['all-production-orders'],
     queryFn: async () => {
-      if (!assignments || assignments.length === 0) return [];
-      const { data } = await supabase.from('production_orders')
-        .select('id, product_type, product_code')
-        .in('current_stage', assignments)
-        .eq('status', 'in_production');
+      const { data, error } = await supabase.from('production_orders')
+        .select('id, product_type, product_code, current_stage, status')
+        .eq('status', 'in_production')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
       return data || [];
     },
-    enabled: !!assignments && assignments.length > 0,
   });
 
   const { data: materials } = useQuery({
@@ -52,7 +44,7 @@ const WorkshopMaterialReturns = () => {
     queryKey: ['my-material-returns', user?.id],
     queryFn: async () => {
       const { data } = await supabase.from('material_returns')
-        .select('*, inventory_materials(name, unit), production_orders(product_code, product_type)')
+        .select('*, inventory_materials(name, unit), production_orders(product_code, product_type, batch_number)')
         .eq('worker_id', user!.id)
         .order('created_at', { ascending: false })
         .limit(20);

@@ -31,15 +31,17 @@ const WorkerDashboard = () => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-50 bg-card border-b px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-background pb-20 lg:pb-4">
+      {/* Header - responsive */}
+      <header className="sticky top-0 z-50 bg-card border-b px-3 py-3 flex items-center justify-between lg:px-6">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
-            <Factory className="h-5 w-5 text-primary-foreground" />
+          <div className="w-10 h-10 lg:w-11 lg:h-11 bg-primary rounded-xl flex items-center justify-center">
+            <Factory className="h-5 w-5 lg:h-6 lg:w-6 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="font-display font-bold text-foreground text-sm">Workshop</h1>
-            <p className="text-[10px] text-muted-foreground">{profile?.full_name}</p>
+            <h1 className="font-display font-bold text-foreground text-sm lg:text-base">Workshop</h1>
+            <p className="text-[10px] lg:text-xs text-muted-foreground hidden xs:block">{profile?.full_name}</p>
+            <p className="text-[10px] lg:text-xs text-muted-foreground xs:hidden">{profile?.full_name?.split(' ')[0]}</p>
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={signOut}>
@@ -47,7 +49,8 @@ const WorkerDashboard = () => {
         </Button>
       </header>
 
-      <div className="p-4 max-w-2xl mx-auto space-y-4">
+      {/* Main content - responsive container */}
+      <div className="p-3 lg:p-6 mx-auto max-w-5xl space-y-4 lg:space-y-6">
         <DailyReportReminder />
         
         {activeTab === 'overview' && <WorkshopOverview />}

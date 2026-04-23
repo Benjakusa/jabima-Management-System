@@ -40,7 +40,7 @@ const AppShell = ({ children, activeTab, onTabChange }: AppShellProps) => {
   return (
     <div className="min-h-screen bg-background">
       {/* Mobile Header */}
-      <header className="sticky top-0 z-50 bg-card border-b px-4 py-3 flex items-center justify-between lg:hidden">
+      <header className="sticky top-0 z-50 bg-card border-b px-3 py-3 flex items-center justify-between md:hidden">
         <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
           <Menu className="h-5 w-5" />
         </Button>
@@ -54,7 +54,7 @@ const AppShell = ({ children, activeTab, onTabChange }: AppShellProps) => {
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-foreground/20" onClick={() => setSidebarOpen(false)} />
           <nav className="absolute left-0 top-0 bottom-0 w-72 bg-card border-r p-4 flex flex-col">
             <div className="flex items-center justify-between mb-6">

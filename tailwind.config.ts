@@ -7,9 +7,20 @@ export default {
   theme: {
     container: {
       center: true,
-      padding: "2rem",
+      padding: {
+        DEFAULT: "1rem",
+        sm: "2rem",
+        lg: "2rem",
+        xl: "2rem",
+      },
       screens: {
+        xs: "480px",
+        sm: "640px",
+        md: "768px",
+        lg: "1024px",
+        xl: "1280px",
         "2xl": "1400px",
+        "3xl": "1536px",
       },
     },
     fontFamily: {
@@ -17,6 +28,18 @@ export default {
       body: ['Inter', 'sans-serif'],
     },
     extend: {
+      screens: {
+        "xs": "480px",
+        "tablet": "768px",
+        "laptop": "1024px",
+        "desktop": "1280px",
+      },
+      spacing: {
+        "18": "4.5rem",
+        "88": "22rem",
+        "100": "25rem",
+        "120": "30rem",
+      },
       colors: {
         success: {
           DEFAULT: "hsl(var(--success))",

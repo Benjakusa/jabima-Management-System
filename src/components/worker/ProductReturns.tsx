@@ -24,7 +24,7 @@ const ProductReturns = () => {
             // Find all products sold by this agent that haven't been returned yet
             const { data, error } = await supabase
                 .from('sales' as any)
-                .select('*, products(*)')
+                .select('*, finished_products(id, product_type, batch_number)')
                 .eq('sales_officer_id', user!.id)
                 .order('created_at', { ascending: false });
             if (error) throw error;
@@ -38,7 +38,7 @@ const ProductReturns = () => {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('product_returns')
-                .select('*, finished_products(product_type)')
+                .select('*, finished_products(id, product_type, batch_number)')
                 .eq('sales_officer_id', user!.id)
                 .order('created_at', { ascending: false });
             if (error) throw error;

@@ -328,21 +328,22 @@ const SalesDashboard = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-50 bg-card border-b px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-background pb-20 lg:pb-4">
+      <header className="sticky top-0 z-50 bg-card border-b px-3 py-3 flex items-center justify-between lg:px-6">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center">
-            <ShoppingCart className="h-5 w-5 text-primary-foreground" />
+          <div className="w-10 h-10 lg:w-11 lg:h-11 bg-primary rounded-xl flex items-center justify-center">
+            <ShoppingCart className="h-5 w-5 lg:h-6 lg:w-6 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="font-display font-bold text-foreground text-sm">Sales</h1>
-            <p className="text-[10px] text-muted-foreground">{profile?.full_name}</p>
+            <h1 className="font-display font-bold text-foreground text-sm lg:text-base">Sales</h1>
+            <p className="text-[10px] lg:text-xs text-muted-foreground hidden xs:block">{profile?.full_name}</p>
+            <p className="text-[10px] lg:text-xs text-muted-foreground xs:hidden">{profile?.full_name?.split(' ')[0]}</p>
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={signOut}><LogOut className="h-4 w-4" /></Button>
       </header>
 
-      <div className="p-4 max-w-2xl mx-auto space-y-4">
+      <div className="p-3 lg:p-6 mx-auto max-w-5xl space-y-4 lg:space-y-6">
         <DailyReportReminder />
 
         {/* HOME / OVERVIEW */}
@@ -746,8 +747,8 @@ const SalesDashboard = () => {
         )}
       </div>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t z-50 px-2 py-1 safe-area-pb">
+      {/* Bottom nav - hidden on desktop */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t z-50 px-2 py-1 safe-area-pb lg:hidden">
         <div className="max-w-2xl mx-auto flex items-center justify-around">
           {navItems.map(item => (
             <button key={item.id} onClick={() => setActiveView(item.id)}

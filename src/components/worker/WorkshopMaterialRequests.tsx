@@ -27,32 +27,41 @@ const WorkshopMaterialRequests = () => {
     enabled: !!user,
   });
 
+  // Load all production orders in production (not filtered by stage)
   const { data: activeOrders } = useQuery({
-    queryKey: ['my-stage-orders', assignments],
+    queryKey: ['all-production-orders'],
     queryFn: async () => {
-      if (!assignments || assignments.length === 0) return [];
-      const { data } = await supabase.from('production_orders')
-        .select('id, product_type, product_code, current_stage')
-        .in('current_stage', assignments)
-        .eq('status', 'in_production');
+      const { data, error } = await supabase.from('production_orders')
+        .select('id, product_type, product_code, current_stage, status')
+        .eq('status', 'in_production')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
       return data || [];
     },
-    enabled: !!assignments && assignments.length > 0,
   });
 
-  const { data: materials } = useQuery({
+  const { data: materials, isLoading: materialsLoading, error: materialsError } = useQuery({
     queryKey: ['available-materials'],
     queryFn: async () => {
-      const { data } = await supabase.from('inventory_materials').select('id, name, unit, quantity');
+      const { data, error } = await supabase.from('inventory_materials').select('id, name, unit, quantity');
+      if (error) {
+        console.error('Error loading materials:', error);
+        throw error;
+      }
       return data || [];
     },
   });
+
+  if (materialsError) {
+    console.error('Materials query error:', materialsError);
+  }
 
   const { data: requests, isLoading } = useQuery({
     queryKey: ['my-material-requests', user?.id],
     queryFn: async () => {
       const { data } = await supabase.from('material_requests')
-        .select('*, inventory_materials(name, unit), production_orders(product_code, product_type)')
+        .select('*, inventory_materials(name, unit), production_orders(product_code, product_type, batch_number)')
         .eq('worker_id', user!.id)
         .order('created_at', { ascending: false })
         .limit(30);
@@ -124,12 +133,13 @@ const WorkshopMaterialRequests = () => {
             <div className="space-y-2">
               <Label className="text-xs">Material *</Label>
               <select value={form.material_id} onChange={e => setForm(f => ({ ...f, material_id: e.target.value }))}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" required>
-                <option value="">Select material...</option>
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" required disabled={materialsLoading}>
+                <option value="">{materialsLoading ? 'Loading...' : 'Select material...'}</option>
                 {(materials || []).map(m => (
                   <option key={m.id} value={m.id}>{m.name} ({m.quantity} {m.unit} available)</option>
                 ))}
               </select>
+              {materialsError && <p className="text-xs text-red-500">Error: {materialsError.message}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
