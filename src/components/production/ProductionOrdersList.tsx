@@ -13,14 +13,6 @@ import { Plus, X, Loader2, Search, Factory, Eye, ArrowRight, CheckCircle, Packag
 import { cn } from '@/lib/utils';
 import { STAGES } from './ProductionPipeline';
 
-const productTypes = [
-  'Simple', 'Half glass', 'High roof',
-  'Executive', 'Dumu', 'Saitoti',
-  'Dragon', 'Tommy', 'Reagan',
-  'English coffin', 'Kupa',
-  'Custom Order',
-];
-
 const sizes = ['Adult', 'Child', 'Infant'];
 const materialTypes = ['Oak', 'Mahogany', 'Pine', 'MDF', 'Cypress', 'Paulownia'];
 
@@ -66,6 +58,15 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
       return data || [];
     },
   });
+
+  const { data: dbProducts } = useQuery({
+    queryKey: ['products-for-orders'],
+    queryFn: async () => {
+      const { data } = await supabase.from('products' as any).select('name').eq('is_active', true).order('name');
+      return (data || []).map((p: any) => p.name);
+    },
+  });
+  const productTypes = dbProducts || ['Simple', 'Half glass', 'High roof', 'Executive', 'Dumu', 'Saitoti', 'Dragon', 'Tommy', 'Reagan', 'English coffin', 'Kupa', 'Custom Order'];
 
   useEffect(() => {
     if (showForm && !batchNumber) {

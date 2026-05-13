@@ -8,9 +8,11 @@ import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
 import ExpenseCharts from './ExpenseCharts';
 import ProfitMarginWidget from './ProfitMarginWidget';
+import StockByBranchPanel from './StockByBranchPanel';
+import InstalmentOverview from './InstalmentOverview';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
-  DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper
+  DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper, Building2
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
@@ -136,6 +138,20 @@ const AdminDashboard = () => {
 
       {/* Missing Daily Reports Alert */}
       <MissingReportsAlert />
+
+      {/* Stock by Branch */}
+      <div>
+        <h3 className="font-display text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-primary" /> Stock by Branch
+        </h3>
+        <StockByBranchPanel />
+      </div>
+
+      {/* Instalment Overview */}
+      <div>
+        <h3 className="font-display text-lg font-semibold text-foreground mb-3">Instalment Plans</h3>
+        <InstalmentOverview />
+      </div>
 
       {/* Analytics Charts */}
       <div>

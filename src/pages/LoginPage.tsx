@@ -96,6 +96,10 @@ const LoginPage = () => {
         <p className="text-center text-xs text-muted-foreground mt-6">
           Contact your administrator for account access
         </p>
+
+        <p className="text-center text-[10px] text-muted-foreground/60 mt-8">
+          Powered by OpenDesk
+        </p>
       </div>
     </div>
   );

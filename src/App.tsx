@@ -49,6 +49,12 @@ const RoleRouter = () => {
       return <SalesDashboard />;
     case 'inventory_officer':
       return <InventoryOfficerDashboard />;
+    case 'branch_manager':
+      return <SalesDashboard />;
+    case 'accountant':
+      return <AdminPage />;
+    case 'driver':
+    case 'lowering_gear_operator':
     default:
       return <SalesDashboard />;
   }

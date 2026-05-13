@@ -5,18 +5,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Loader2, UserPlus, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UserWithRole } from './UserManagement';
 
-type Role = 'inventory_officer' | 'workshop_worker' | 'sales_officer';
+type Role = 'inventory_officer' | 'workshop_worker' | 'sales_officer' | 'driver' | 'lowering_gear_operator' | 'branch_manager' | 'accountant';
 
 const roleLabels: Record<Role, string> = {
   inventory_officer: 'Inventory Officer',
   workshop_worker: 'Workshop Worker',
   sales_officer: 'Sales Officer',
+  driver: 'Driver',
+  lowering_gear_operator: 'Lowering Gear Operator',
+  branch_manager: 'Branch Manager',
+  accountant: 'Accountant',
 };
+
+const assignableRoles: Role[] = ['inventory_officer', 'workshop_worker', 'sales_officer', 'driver', 'lowering_gear_operator', 'branch_manager', 'accountant'];
 
 interface Props {
   editUser: UserWithRole | null;
@@ -37,13 +43,8 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
   });
   const { toast } = useToast();
 
-  // Helper: extract the real error message from a supabase.functions.invoke result.
-  // The SDK wraps non-2xx responses in FunctionsHttpError whose .message is always
-  // the generic "Edge Function returned a non-2xx status code". The actual body
-  // (e.g. {"error":"Unauthorized"}) lives in error.context (a Response object).
   const extractFnError = async (res: { data: any; error: any }) => {
     if (!res.error) return null;
-    // Try to read the body from the Response stored in .context
     try {
       const response: Response | undefined = res.error?.context;
       if (response) {
@@ -51,10 +52,7 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
         if (body?.error) return body.error;
         if (body?.message) return body.message;
       }
-    } catch {
-      // response already consumed or not JSON
-    }
-    // Fallback
+    } catch {}
     return res.error.message || 'Unknown edge function error';
   };
 
@@ -108,7 +106,6 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
           role: form.role,
         });
 
-        // Update branch if selected
         if (form.branch_id && data?.user_id) {
           await supabase.from('profiles').update({ branch_id: form.branch_id } as any).eq('user_id', data.user_id);
         }
@@ -171,14 +168,14 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
 
           <div className="space-y-2">
             <Label>Role *</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {(Object.entries(roleLabels) as [Role, string][]).map(([key, label]) => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {assignableRoles.map((key) => (
                 <button key={key} type="button" onClick={() => setForm(f => ({ ...f, role: key }))}
                   className={cn(
-                    "px-4 py-3 rounded-xl border text-sm font-medium transition-colors",
+                    "px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors",
                     form.role === key ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
                   )}>
-                  {label}
+                  {roleLabels[key]}
                 </button>
               ))}
             </div>

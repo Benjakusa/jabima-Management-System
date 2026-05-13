@@ -52,6 +52,24 @@ const SaleReceipt = ({ saleId, type }: Props) => {
     },
   });
 
+  const { data: paymentTxns } = useQuery({
+    queryKey: ['receipt-payments', saleId],
+    enabled: !!sale && type === 'product',
+    queryFn: async () => {
+      const { data } = await supabase.from('payment_transactions' as any).select('*').eq('sale_id', saleId);
+      return (data || []) as any[];
+    },
+  });
+
+  const { data: instalments } = useQuery({
+    queryKey: ['receipt-instalments', saleId],
+    enabled: !!sale && type === 'product',
+    queryFn: async () => {
+      const { data } = await supabase.from('instalment_schedule' as any).select('*').eq('sale_id', saleId).order('due_date');
+      return (data || []) as any[];
+    },
+  });
+
   const generatePDFBlob = async (): Promise<Blob | null> => {
     const printContent = receiptRef.current;
     if (!printContent) return null;
@@ -106,9 +124,27 @@ const formatReceiptText = () => {
     const saleData = sale as any;
     const amount = type === 'product' ? saleData.selling_price : saleData.amount;
     const itemName = type === 'product' ? saleData.product_type : saleData.service_name;
-    const isCashPayment = saleData.payment_method === 'cash';
+    const cashT = cashTotal || 0;
+    const mpesaT = mpesaTotal || 0;
+    const isLipaT = !!saleData.is_lipa_pole_pole;
+    const remainingT = remainingBalance || 0;
+
+    let paymentLines = `Mode: ${isLipaT ? 'LIPA POLE POLE' : 'FULL PAYMENT'}`;
+    if (hasPaymentTxns) {
+      if (cashT > 0) paymentLines += `\nCash: Ksh ${cashT.toLocaleString()}`;
+      if (mpesaT > 0) paymentLines += `\nM-Pesa: Ksh ${mpesaT.toLocaleString()}`;
+    } else {
+      paymentLines += `\nPayment: ${saleData.payment_method === 'cash' ? 'CASH' : 'M-PESA'}`;
+      if (saleData.payment_method === 'cash') {
+        paymentLines += `\nCash: Ksh ${saleData.amount_received}\nChange: Ksh ${saleData.change_given}`;
+      }
+    }
+    if (isLipaT && remainingT > 0) {
+      paymentLines += `\nRemaining: Ksh ${remainingT.toLocaleString()}`;
+    }
+
     const todayStr = new Date(sale.created_at).toISOString().slice(0,10).replace(/-/g,'');
-    return `${COMPANY.name}\nTel: ${COMPANY.phone}\nEmail: ${COMPANY.email}\n\n══════════════════════════════\nSALES RECEIPT\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\n══════════════════════════════\n\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nTime: ${new Date(sale.created_at).toLocaleTimeString()}\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\n\nCustomer: ${sale.customer_name}${sale.customer_phone ? `\nPhone: ${sale.customer_phone}` : ''}\n\n──────────────────────────────\nPayment: ${isCashPayment ? 'CASH' : 'M-PESA'}\nRef: ${isCashPayment ? `CSH-${todayStr}-${sale.id.slice(0,6).toUpperCase()}` : saleData.mpesa_code}${isCashPayment ? `\nCash: Ksh ${saleData.amount_received}\nChange: Ksh ${saleData.change_given}` : ''}\n\n══════════════════════════════\nTOTAL: Ksh ${amount.toLocaleString()}\n══════════════════════════════\n\nServed by: ${officerProfile?.full_name || 'Staff'}\nThank you for choosing\nJabima Funeral Directors`;
+    return `${COMPANY.name}\nTel: ${COMPANY.phone}\nEmail: ${COMPANY.email}\n\n══════════════════════════════\nSALES RECEIPT\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\n══════════════════════════════\n\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nTime: ${new Date(sale.created_at).toLocaleTimeString()}\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\n\nCustomer: ${sale.customer_name}${sale.customer_phone ? `\nPhone: ${sale.customer_phone}` : ''}\n\n──────────────────────────────\n${paymentLines}\n\n══════════════════════════════\nTOTAL: Ksh ${amount.toLocaleString()}\n══════════════════════════════\n\nServed by: ${officerProfile?.full_name || 'Staff'}\nThank you for choosing\nJabima Funeral Directors`;
   };
 
   const sharePDFViaWhatsApp = async () => {
@@ -189,6 +225,15 @@ const formatReceiptText = () => {
   const amount = type === 'product' ? s.selling_price : s.amount;
   const itemName = type === 'product' ? s.product_type : s.service_name;
   const itemLabel = type === 'product' ? 'Product' : 'Service';
+  const cashTotal = paymentTxns?.filter((t: any) => t.payment_method === 'cash').reduce((s: number, t: any) => s + t.amount, 0) || 0;
+  const mpesaTotal = paymentTxns?.filter((t: any) => t.payment_method === 'mpesa').reduce((s: number, t: any) => s + t.amount, 0) || 0;
+  const hasPaymentTxns = !!(paymentTxns && paymentTxns.length > 0);
+
+  const instalTotalDue = instalments?.reduce((s: number, i: any) => s + (i.amount_due || 0), 0) || 0;
+  const instalTotalPaid = instalments?.reduce((s: number, i: any) => s + (i.amount_paid || 0), 0) || 0;
+  const remainingBalance = Math.max(0, instalTotalDue - instalTotalPaid);
+  const isLipa = !!s.is_lipa_pole_pole;
+
   const isCashPayment = s.payment_method === 'cash';
   const paymentMethodDisplay = isCashPayment ? 'CASH' : 'M-PESA';
   const today = new Date(sale.created_at).toISOString().slice(0,10).replace(/-/g,'');
@@ -307,26 +352,63 @@ const formatReceiptText = () => {
           {/* Payment Info */}
           <div className="space-y-1">
             <div className="rpt-row">
-              <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Payment Method</span>
-              <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>{paymentMethodDisplay}</span>
+              <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Mode</span>
+              <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>{isLipa ? 'LIPA POLE POLE' : 'FULL PAYMENT'}</span>
             </div>
-            <div className="rpt-row">
-              <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Reference</span>
-              <span className="rpt-value rpt-mono" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>
-                {isCashPayment ? cashReference : (sale.mpesa_code || 'N/A')}
-              </span>
-            </div>
-            {isCashPayment && (
+            {hasPaymentTxns ? (
+              <>
+                {cashTotal > 0 && (
+                  <div className="rpt-row">
+                    <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Cash</span>
+                    <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Ksh {cashTotal.toLocaleString()}</span>
+                  </div>
+                )}
+                {mpesaTotal > 0 && (
+                  <div className="rpt-row">
+                    <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>M-Pesa</span>
+                    <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Ksh {mpesaTotal.toLocaleString()}</span>
+                  </div>
+                )}
+                {paymentTxns.filter((t: any) => t.payment_method === 'mpesa').map((t: any) => t.reference_number).filter(Boolean).length > 0 && (
+                  <div className="rpt-row">
+                    <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>M-Pesa Ref</span>
+                    <span className="rpt-value rpt-mono" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>
+                      {paymentTxns.filter((t: any) => t.payment_method === 'mpesa').map((t: any) => t.reference_number).filter(Boolean).join(', ')}
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
               <>
                 <div className="rpt-row">
-                  <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Cash Received</span>
-                  <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Ksh {s.amount_received?.toLocaleString()}</span>
+                  <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Payment Method</span>
+                  <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>{paymentMethodDisplay}</span>
                 </div>
                 <div className="rpt-row">
-                  <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Change Given</span>
-                  <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Ksh {s.change_given?.toLocaleString()}</span>
+                  <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Reference</span>
+                  <span className="rpt-value rpt-mono" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>
+                    {isCashPayment ? cashReference : (sale.mpesa_code || 'N/A')}
+                  </span>
                 </div>
+                {isCashPayment && (
+                  <>
+                    <div className="rpt-row">
+                      <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Cash Received</span>
+                      <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Ksh {s.amount_received?.toLocaleString()}</span>
+                    </div>
+                    <div className="rpt-row">
+                      <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Change Given</span>
+                      <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px' }}>Ksh {s.change_given?.toLocaleString()}</span>
+                    </div>
+                  </>
+                )}
               </>
+            )}
+            {isLipa && remainingBalance > 0 && (
+              <div className="rpt-row" style={{ borderTop: '1px dashed #ccc', paddingTop: 6, marginTop: 4 }}>
+                <span className="rpt-label" style={{ fontSize: printSize === 'a4' ? '11px' : '8px', fontWeight: 'bold' }}>Remaining Balance</span>
+                <span className="rpt-value" style={{ fontSize: printSize === 'a4' ? '11px' : '8px', fontWeight: 'bold', color: '#dc2626' }}>Ksh {remainingBalance.toLocaleString()}</span>
+              </div>
             )}
           </div>
 

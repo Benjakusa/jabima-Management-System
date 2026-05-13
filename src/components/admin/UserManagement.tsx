@@ -18,6 +18,10 @@ export const roleLabels: Record<string, string> = {
   inventory_officer: 'Inventory Officer',
   workshop_worker: 'Workshop Worker',
   sales_officer: 'Sales Officer',
+  driver: 'Driver',
+  lowering_gear_operator: 'Lowering Gear Operator',
+  branch_manager: 'Branch Manager',
+  accountant: 'Accountant',
 };
 
 export type UserWithRole = {
@@ -176,6 +180,10 @@ const UserManagement = () => {
                   user.role === 'inventory_officer' ? "bg-warning/10 text-warning" :
                   user.role === 'workshop_worker' ? "bg-success/10 text-success" :
                   user.role === 'sales_officer' ? "bg-accent text-accent-foreground" :
+                  user.role === 'driver' ? "bg-blue-500/10 text-blue-600" :
+                  user.role === 'lowering_gear_operator' ? "bg-purple-500/10 text-purple-600" :
+                  user.role === 'branch_manager' ? "bg-amber-500/10 text-amber-600" :
+                  user.role === 'accountant' ? "bg-rose-500/10 text-rose-600" :
                   "bg-muted text-muted-foreground"
                 )}>
                   {roleLabels[user.role] || user.role}

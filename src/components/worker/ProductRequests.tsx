@@ -25,13 +25,13 @@ const ProductRequests = () => {
     const [filterSource, setFilterSource] = useState<'' | 'workshop' | 'external'>('');
     const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
-    const productTypes = [
-        'Simple', 'Half glass', 'High roof',
-        'Executive', 'Dumu', 'Saitoti',
-        'Dragon', 'Tommy', 'Reagan',
-        'English coffin', 'Kupa',
-        'Custom Order',
-    ];
+    const { data: productTypes } = useQuery({
+        queryKey: ['product-request-types'],
+        queryFn: async () => {
+            const { data } = await supabase.from('products' as any).select('name').eq('is_active', true).order('name');
+            return (data || []).map((p: any) => p.name);
+        },
+    });
 
     const { data: requests, isLoading } = useQuery({
         queryKey: ['my-product-requests', user?.id],

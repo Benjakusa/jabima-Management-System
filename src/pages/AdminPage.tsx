@@ -10,6 +10,12 @@ import ExpenseManagement from '@/components/expenses/ExpenseManagement';
 import SettingsManagement from '@/components/settings/SettingsManagement';
 import DailyReportsOverview from '@/components/admin/DailyReportsOverview';
 import ProductionManagement from '@/components/production/ProductionManagement';
+import MaterialCategoriesPage from '@/components/admin/MaterialCategoriesPage';
+import ProductsDesignsPage from '@/components/admin/ProductsDesignsPage';
+import ShopItemsPage from '@/components/admin/ShopItemsPage';
+import InterbranchTransfersPage from '@/components/admin/InterbranchTransfersPage';
+import BranchManagementPage from '@/components/admin/BranchManagementPage';
+import WorkerStageAssignmentsPage from '@/components/admin/WorkerStageAssignmentsPage';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -36,6 +42,18 @@ const AdminPage = () => {
         return <DailyReportsOverview />;
       case 'settings':
         return <SettingsManagement />;
+      case 'materials':
+        return <MaterialCategoriesPage />;
+      case 'products':
+        return <ProductsDesignsPage />;
+      case 'shop-items':
+        return <ShopItemsPage />;
+      case 'transfers':
+        return <InterbranchTransfersPage />;
+      case 'branches':
+        return <BranchManagementPage />;
+      case 'workers':
+        return <WorkerStageAssignmentsPage />;
       default:
         return <AdminDashboard />;
     }

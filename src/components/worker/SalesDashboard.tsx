@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
+import PaymentTransactionsList from '@/components/sales/PaymentTransactionsList';
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
 
@@ -136,6 +137,16 @@ const SalesDashboard = () => {
     enabled: !!user,
   });
 
+  const { data: instalmentSchedules } = useQuery({
+    queryKey: ['instalment-schedules', receiptId],
+    queryFn: async () => {
+      if (!receiptId) return [];
+      const { data } = await supabase.from('instalment_schedule' as any).select('*').eq('sale_id', receiptId).order('due_date');
+      return data || [];
+    },
+    enabled: !!receiptId,
+  });
+
   const fmt = formatCurrency;
   const today = new Date().toDateString();
   const todaySales = mySales?.filter(s => new Date(s.created_at).toDateString() === today) || [];
@@ -148,10 +159,21 @@ const SalesDashboard = () => {
   const commissionConfig = paymentConfigs?.find(c => c.payment_type === 'commission');
   const todayCommission = commissionConfig ? (todaySales.length + todayServiceSales.length) * commissionConfig.amount : 0;
 
-  // Payment handling
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa_stk' | 'mpesa_till'>('cash');
-  const [amountReceived, setAmountReceived] = useState('');
+  // Payment mode: Full Payment or Lipa Pole Pole
+  const [paymentMode, setPaymentMode] = useState<'full' | 'lipa'>('full');
+
+  // Split payment: cash + mpesa work independently
+  const [cashAmount, setCashAmount] = useState('');
+  const [mpesaAmount, setMpesaAmount] = useState('');
+  const [mpesaCode, setMpesaCode] = useState('');
   const [isMpesaProcessing, setIsMpesaProcessing] = useState(false);
+
+  // Lipa Pole Pole / Instalment plan
+  const [enableInstalments, setEnableInstalments] = useState(false);
+  const [instalmentConfig, setInstalmentConfig] = useState({ deposit: '', frequency: 'monthly', num_instalments: '3' });
+
+  // M-Pesa STK tracking
+  const [checkoutRequestID, setCheckoutRequestID] = useState('');
 
   // Product sale form
   const [pForm, setPForm] = useState({ finished_product_id: '', customer_name: '', customer_phone: '', selling_price: '', mpesa_code: '', branch_id: '', productSearch: '' });
@@ -163,12 +185,21 @@ const SalesDashboard = () => {
       if (!pForm.customer_name.trim()) throw new Error('Customer name required');
 
       const sellingPrice = parseFloat(pForm.selling_price);
-      if (paymentMethod === 'cash') {
-        const received = parseFloat(amountReceived);
-        if (received < sellingPrice) throw new Error('Amount received is less than selling price');
-      } else if (!pForm.mpesa_code.trim()) {
-        throw new Error('M-Pesa reference required');
+      const totalReceived = (parseFloat(cashAmount) || 0) + (parseFloat(mpesaAmount) || 0);
+
+      if (paymentMode === 'lipa') {
+        const deposit = parseFloat(instalmentConfig.deposit) || 0;
+        if (deposit > sellingPrice) throw new Error('Deposit cannot exceed selling price');
+        if (totalReceived < deposit) throw new Error('Total payment is less than deposit');
+      } else {
+        if (totalReceived < sellingPrice) throw new Error('Total payment is less than selling price');
       }
+
+      const isLipa = paymentMode === 'lipa';
+      const totalPaid = isLipa ? (parseFloat(instalmentConfig.deposit) || 0) : totalReceived;
+      const mpesaRef = mpesaAmount && parseFloat(mpesaAmount) > 0
+        ? (mpesaCode.trim() || `MPESA-${Date.now().toString().slice(-6)}`)
+        : `CASH-${Date.now().toString().slice(-6)}`;
 
       const { data, error } = await supabase.from('sales').insert({
         finished_product_id: pForm.finished_product_id,
@@ -176,11 +207,61 @@ const SalesDashboard = () => {
         customer_name: pForm.customer_name.trim(),
         customer_phone: pForm.customer_phone.trim() || null,
         selling_price: sellingPrice,
-        mpesa_code: paymentMethod === 'cash' ? `CASH-${Date.now().toString().slice(-6)}` : pForm.mpesa_code.trim().toUpperCase(),
+        amount_paid: totalPaid,
+        payment_status: isLipa ? (totalPaid > 0 ? 'partial' : 'unpaid') : 'paid',
+        is_lipa_pole_pole: isLipa,
+        instalment_plan: isLipa ? instalmentConfig.frequency : null,
+        mpesa_code: mpesaRef,
         sales_officer_id: user!.id,
         branch_id: pForm.branch_id || profile?.branch_id || null,
       } as any).select().single();
       if (error) throw error;
+
+      // Record split payment transactions
+      const paymentTxns: any[] = [];
+      if (parseFloat(cashAmount) > 0) {
+        paymentTxns.push({ sale_id: data.id, amount: parseFloat(cashAmount), payment_method: 'cash', reference_number: `CASH-${Date.now().toString().slice(-6)}`, recorded_by: user?.id });
+      }
+      if (parseFloat(mpesaAmount) > 0) {
+        paymentTxns.push({ sale_id: data.id, amount: parseFloat(mpesaAmount), payment_method: 'mpesa', reference_number: mpesaCode.trim() || `MPESA-${Date.now().toString().slice(-6)}`, recorded_by: user?.id });
+      }
+      if (paymentTxns.length > 0) {
+        const { error: txnErr } = await supabase.from('payment_transactions' as any).insert(paymentTxns);
+        if (txnErr) throw txnErr;
+      }
+
+      // Generate instalment schedule when Lipa Pole Pole is enabled
+      if (isLipa) {
+        const deposit = parseFloat(instalmentConfig.deposit) || 0;
+        const num = parseInt(instalmentConfig.num_instalments) || 1;
+        const remaining = sellingPrice - deposit;
+        const perInstallment = remaining / num;
+        const startDate = new Date();
+        const rows = [];
+        for (let i = 0; i < num; i++) {
+          const due = new Date(startDate);
+          if (instalmentConfig.frequency === 'weekly') due.setDate(due.getDate() + (i + 1) * 7);
+          else if (instalmentConfig.frequency === 'monthly') due.setMonth(due.getMonth() + (i + 1));
+          else due.setMonth(due.getMonth() + (i + 1) * 3);
+          rows.push({
+            sale_id: data.id,
+            due_date: due.toISOString().split('T')[0],
+            amount_due: i === num - 1 ? +(remaining - perInstallment * (num - 1)).toFixed(2) : +perInstallment.toFixed(2),
+            amount_paid: 0,
+            status: 'pending',
+          });
+        }
+        const { error: instError } = await supabase.from('instalment_schedule' as any).insert(rows);
+        if (instError) throw instError;
+      }
+
+      // Link M-Pesa transaction to sale if we have a CheckoutRequestID
+      if (checkoutRequestID) {
+        await supabase.from('mpesa_transactions' as any)
+          .update({ sale_id: data.id })
+          .eq('checkout_request_id', checkoutRequestID);
+      }
+
       await supabase.from('finished_products').update({ status: 'sold' as const }).eq('id', pForm.finished_product_id);
       if (product.shop_inventory_id) {
         await supabase.from('shop_inventory').delete().eq('id', product.shop_inventory_id);
@@ -188,12 +269,17 @@ const SalesDashboard = () => {
       return data;
     },
     onSuccess: (data) => {
-      toast({ title: 'Sale recorded!' });
+      toast({ title: paymentMode === 'lipa' ? 'Sale with instalment plan created!' : 'Sale recorded!' });
       setPForm({ finished_product_id: '', customer_name: '', customer_phone: '', selling_price: '', mpesa_code: '', branch_id: '', productSearch: '' });
-      setAmountReceived('');
-      setPaymentMethod('cash');
+      setCashAmount('');
+      setMpesaAmount('');
+      setMpesaCode('');
+      setPaymentMode('full');
+      setInstalmentConfig({ deposit: '', frequency: 'monthly', num_instalments: '3' });
+      setCheckoutRequestID('');
       queryClient.invalidateQueries({ queryKey: ['my-product-sales'] });
       queryClient.invalidateQueries({ queryKey: ['available-products'] });
+      queryClient.invalidateQueries({ queryKey: ['instalment-schedules'] });
       if (data) { setReceiptId(data.id); setReceiptType('product'); setActiveView('receipt'); }
     },
     onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
@@ -207,12 +293,12 @@ const SalesDashboard = () => {
       if (!sForm.customer_name.trim()) throw new Error('Customer name required');
 
       const amount = parseFloat(sForm.amount);
-      if (paymentMethod === 'cash') {
-        const received = parseFloat(amountReceived);
-        if (received < amount) throw new Error('Amount received is less than total');
-      } else if (!sForm.mpesa_code.trim()) {
-        throw new Error('M-Pesa reference required');
-      }
+      const totalReceived = (parseFloat(cashAmount) || 0) + (parseFloat(mpesaAmount) || 0);
+      if (totalReceived < amount) throw new Error('Total payment is less than amount');
+
+      const mpesaRef = mpesaAmount && parseFloat(mpesaAmount) > 0
+        ? (mpesaCode.trim() || `MPESA-${Date.now().toString().slice(-6)}`)
+        : `CASH-${Date.now().toString().slice(-6)}`;
 
       // Build description with booking details
       const descParts = [sForm.description];
@@ -227,19 +313,34 @@ const SalesDashboard = () => {
         customer_name: sForm.customer_name.trim(),
         customer_phone: sForm.customer_phone.trim() || null,
         amount: amount,
-        mpesa_code: paymentMethod === 'cash' ? `CASH-${Date.now().toString().slice(-6)}` : sForm.mpesa_code.trim().toUpperCase(),
+        mpesa_code: mpesaRef,
         description: fullDesc || null,
         sales_officer_id: user!.id,
         branch_id: sForm.branch_id || profile?.branch_id || null,
       } as any).select().single();
       if (error) throw error;
+
+      // Record split payment transactions
+      const paymentTxns: any[] = [];
+      if (parseFloat(cashAmount) > 0) {
+        paymentTxns.push({ sale_id: data.id, amount: parseFloat(cashAmount), payment_method: 'cash', reference_number: `CASH-${Date.now().toString().slice(-6)}`, recorded_by: user?.id });
+      }
+      if (parseFloat(mpesaAmount) > 0) {
+        paymentTxns.push({ sale_id: data.id, amount: parseFloat(mpesaAmount), payment_method: 'mpesa', reference_number: mpesaCode.trim() || `MPESA-${Date.now().toString().slice(-6)}`, recorded_by: user?.id });
+      }
+      if (paymentTxns.length > 0) {
+        const { error: txnErr } = await supabase.from('payment_transactions' as any).insert(paymentTxns);
+        if (txnErr) throw txnErr;
+      }
+
       return data;
     },
     onSuccess: (data) => {
       toast({ title: 'Service sale recorded!' });
       setSForm({ service_name: 'Hearse', customer_name: '', customer_phone: '', amount: '', mpesa_code: '', description: '', branch_id: '', event_date: '', duration: '', location: '', special_requirements: '' });
-      setAmountReceived('');
-      setPaymentMethod('cash');
+      setCashAmount('');
+      setMpesaAmount('');
+      setMpesaCode('');
       queryClient.invalidateQueries({ queryKey: ['my-service-sales'] });
       if (data) { setReceiptId(data.id); setReceiptType('service'); setActiveView('receipt'); }
     },
@@ -258,7 +359,7 @@ const SalesDashboard = () => {
           phone,
           amount,
           accountReference: 'JABIMA',
-          transactionDesc: type === 'product' ? 'Coffin Sale' : 'Service Payment',
+          transactionDesc: type === 'product' ? 'Product Sale' : 'Service Payment',
         },
       });
 
@@ -273,6 +374,7 @@ const SalesDashboard = () => {
       }
 
       if (data?.ResponseCode === "0") {
+        setCheckoutRequestID(data.CheckoutRequestID);
         toast({
           title: 'STK Push Sent!',
           description: `Check your phone for payment prompt. Checkout ID: ${data.CheckoutRequestID}`
@@ -308,8 +410,8 @@ const SalesDashboard = () => {
   );
 
   const allSales = [
-    ...(todaySales || []).map(s => ({ type: 'Product' as const, name: s.product_type, amount: s.selling_price, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code })),
-    ...(todayServiceSales || []).map(s => ({ type: 'Service' as const, name: s.service_name, amount: s.amount, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code })),
+    ...(todaySales || []).map(s => ({ type: 'Product' as const, name: s.product_type, amount: s.selling_price, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code, payment_status: (s as any).payment_status, amount_paid: (s as any).amount_paid, is_lipa: (s as any).is_lipa_pole_pole })),
+    ...(todayServiceSales || []).map(s => ({ type: 'Service' as const, name: s.service_name, amount: s.amount, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code, payment_status: undefined, amount_paid: undefined, is_lipa: undefined })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const navItems = [
@@ -418,17 +520,35 @@ const SalesDashboard = () => {
         {activeView === 'product' && (
           <div className="space-y-4">
             <Button variant="ghost" size="sm" onClick={() => setActiveView('home')}>← Back</Button>
+
+            {/* Payment Mode Selector */}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setPaymentMode('full')}
+                className={cn("p-4 rounded-xl border-2 text-center transition-all", paymentMode === 'full' ? "border-success bg-success/5" : "border-border hover:border-success/30")}>
+                <ShoppingCart className={cn("h-6 w-6 mx-auto mb-1", paymentMode === 'full' ? "text-success" : "text-muted-foreground")} />
+                <p className={cn("text-sm font-bold", paymentMode === 'full' ? "text-success" : "text-foreground")}>Full Payment</p>
+                <p className="text-[10px] text-muted-foreground">Pay in full now</p>
+              </button>
+              <button type="button" onClick={() => setPaymentMode('lipa')}
+                className={cn("p-4 rounded-xl border-2 text-center transition-all", paymentMode === 'lipa' ? "border-primary bg-primary/5" : "border-border hover:border-primary/30")}>
+                <TrendingUp className={cn("h-6 w-6 mx-auto mb-1", paymentMode === 'lipa' ? "text-primary" : "text-muted-foreground")} />
+                <p className={cn("text-sm font-bold", paymentMode === 'lipa' ? "text-primary" : "text-foreground")}>Lipa Pole Pole</p>
+                <p className="text-[10px] text-muted-foreground">Instalment plan</p>
+              </button>
+            </div>
+
             <Card className="border">
               <CardContent className="p-4">
                 <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4 text-primary" />Point of Sale — Product
+                  <ShoppingCart className="h-4 w-4 text-primary" />Product Sale
+                  {paymentMode === 'lipa' && <Badge variant="outline" className="text-[9px]">Lipa Pole Pole</Badge>}
                 </h3>
                 <form onSubmit={(e) => { e.preventDefault(); productMutation.mutate(); }} className="space-y-4">
                   {/* Available Products List */}
                   <div className="space-y-2 pt-1">
                     <Label className="text-xs font-semibold flex items-center gap-1.5 text-primary">
                       <Package className="h-3.5 w-3.5" />
-                      Pick Product for Sale *
+                      Pick Product *
                     </Label>
                     {(!finishedProducts || finishedProducts.length === 0) ? (
                       <div className="text-center py-8 border border-dashed rounded-xl bg-accent/20">
@@ -439,7 +559,7 @@ const SalesDashboard = () => {
                     ) : (
                       <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-1">
                         {finishedProducts.map(p => {
-                          const batchNum = p.batch_number || p.production_orders?.batch_number || 'No Batch';
+                          const batchNum = p.batch_number || 'No Batch';
                           const isSelected = pForm.finished_product_id === p.id;
                           return (
                             <button key={p.id} type="button" onClick={() => setPForm(f => ({ ...f, finished_product_id: p.id, selling_price: pForm.selling_price || p.production_cost?.toString() || '' }))}
@@ -461,9 +581,6 @@ const SalesDashboard = () => {
                                   <p className={cn("text-[8px] opacity-60", isSelected ? "text-primary-foreground" : "text-muted-foreground")}>Rec. Price</p>
                                 </div>
                               </div>
-                              {isSelected && (
-                                <div className="absolute right-0 top-0 h-full w-1 bg-white/30" />
-                              )}
                             </button>
                           );
                         })}
@@ -473,55 +590,92 @@ const SalesDashboard = () => {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div><Label className="text-xs">Customer Name *</Label><Input value={pForm.customer_name} onChange={e => setPForm(f => ({ ...f, customer_name: e.target.value }))} className="h-10 text-sm" required /></div>
-                    <div><Label className="text-xs">Phone (for M-Pesa)</Label><Input value={pForm.customer_phone} onChange={e => setPForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
+                    <div><Label className="text-xs">Phone</Label><Input value={pForm.customer_phone} onChange={e => setPForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
                     <div><Label className="text-xs">Selling Price (Ksh) *</Label><Input type="number" value={pForm.selling_price} onChange={e => setPForm(f => ({ ...f, selling_price: e.target.value }))} className="h-10 text-sm" required /></div>
                   </div>
 
-                  {/* Payment Options */}
-                  <div className="space-y-2 pt-2 border-t">
-                    <Label className="text-xs font-semibold">Payment Method</Label>
-                    <div className="flex gap-2">
-                      <Button type="button" variant={paymentMethod === 'cash' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('cash')}>Cash</Button>
-                      <Button type="button" variant={paymentMethod === 'mpesa_stk' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_stk')}>M-Pesa STK</Button>
-                      <Button type="button" variant={paymentMethod === 'mpesa_till' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_till')}>M-Pesa Till</Button>
-                    </div>
-
-                    {paymentMethod === 'cash' && (
-                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                  {/* Lipa Pole Pole Config */}
+                  {paymentMode === 'lipa' && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-3">
+                      <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5" /> Instalment Plan
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <Label className="text-[10px]">Cash Received (Ksh)</Label>
-                          <Input type="number" value={amountReceived} onChange={e => setAmountReceived(e.target.value)} className="h-9 text-sm" placeholder="Amount from client" />
+                          <Label className="text-[10px]">Deposit (Ksh)</Label>
+                          <Input type="number" value={instalmentConfig.deposit} onChange={e => setInstalmentConfig(f => ({ ...f, deposit: e.target.value }))} className="h-8 text-sm" placeholder="0" min="0" />
                         </div>
-                        {amountReceived && pForm.selling_price && (
-                          <div className="flex justify-between items-center text-[11px]">
-                            <span className="text-muted-foreground">Change to give:</span>
-                            <span className="font-bold text-success">{fmt(Math.max(0, parseFloat(amountReceived) - parseFloat(pForm.selling_price)))}</span>
-                          </div>
-                        )}
+                        <div>
+                          <Label className="text-[10px]">Frequency</Label>
+                          <select value={instalmentConfig.frequency} onChange={e => setInstalmentConfig(f => ({ ...f, frequency: e.target.value }))}
+                            className="w-full h-8 rounded-lg border border-input bg-background px-2 text-xs">
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">Instalments</Label>
+                          <Input type="number" min="1" max="24" value={instalmentConfig.num_instalments} onChange={e => setInstalmentConfig(f => ({ ...f, num_instalments: e.target.value }))} className="h-8 text-sm" />
+                        </div>
                       </div>
-                    )}
+                      {parseFloat(instalmentConfig.deposit) > 0 && parseFloat(pForm.selling_price) > 0 && (
+                        <div className="text-xs text-muted-foreground bg-background/50 rounded px-2 py-1.5">
+                          Balance: {fmt(parseFloat(pForm.selling_price) - parseFloat(instalmentConfig.deposit))} in {instalmentConfig.num_instalments} instalments of {fmt((parseFloat(pForm.selling_price) - parseFloat(instalmentConfig.deposit)) / parseInt(instalmentConfig.num_instalments))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                    {(paymentMethod === 'mpesa_stk' || paymentMethod === 'mpesa_till') && (
-                      <div className="bg-accent/30 p-3 rounded-lg space-y-3">
-                        <div className="flex gap-2">
-                          <Button type="button" onClick={() => paymentMethod === 'mpesa_stk' ? handleMpesaStkPush(pForm.selling_price, pForm.customer_phone, 'product') : handleMpesaTillFetch('product')}
-                            disabled={isMpesaProcessing || (paymentMethod === 'mpesa_stk' && !pForm.customer_phone)}
-                            className="flex-1 h-9 bg-success hover:bg-success/90 text-xs gap-1">
-                            {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
-                            {paymentMethod === 'mpesa_stk' ? 'Send STK Push' : 'Fetch Till Transaction'}
-                          </Button>
+                  {/* Split Payment */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs font-semibold">Payment</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-success" />
+                          <Label className="text-[10px] font-medium">Cash Amount (Ksh)</Label>
                         </div>
-                        <div>
-                          <Label className="text-[10px]">M-Pesa Reference / Code</Label>
-                          <Input value={pForm.mpesa_code} onChange={e => setPForm(f => ({ ...f, mpesa_code: e.target.value.toUpperCase() }))} className="h-9 text-sm uppercase font-mono" placeholder="O-XXXXXX" />
+                        <Input type="number" value={cashAmount} onChange={e => setCashAmount(e.target.value)} className="h-9 text-sm" placeholder="0" min="0" />
+                      </div>
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-primary" />
+                          <Label className="text-[10px] font-medium">M-Pesa Amount (Ksh)</Label>
                         </div>
+                        <Input type="number" value={mpesaAmount} onChange={e => setMpesaAmount(e.target.value)} className="h-9 text-sm" placeholder="0" min="0" />
+                      </div>
+                    </div>
+                    <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                      <Label className="text-[10px]">M-Pesa Reference</Label>
+                      <div className="flex gap-2">
+                        <Input value={mpesaCode} onChange={e => setMpesaCode(e.target.value.toUpperCase())} className="h-9 text-sm uppercase font-mono flex-1" placeholder="Code (optional if cash only)" />
+                        <Button type="button" onClick={() => handleMpesaStkPush(paymentMode === 'lipa' ? (instalmentConfig.deposit || '0') : pForm.selling_price, pForm.customer_phone, 'product')}
+                          disabled={isMpesaProcessing || !pForm.customer_phone}
+                          className="h-9 bg-success hover:bg-success/90 text-xs gap-1 shrink-0">
+                          {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                          STK
+                        </Button>
+                      </div>
+                    </div>
+                    {(cashAmount || mpesaAmount) && pForm.selling_price && (
+                      <div className="flex justify-between items-center text-xs px-1">
+                        <span className="text-muted-foreground">Total received:</span>
+                        <span className="font-bold text-success">{fmt((parseFloat(cashAmount) || 0) + (parseFloat(mpesaAmount) || 0))}</span>
+                        {paymentMode === 'full' && (
+                          <>
+                            <span className="text-muted-foreground">Change:</span>
+                            <span className="font-bold">{fmt(Math.max(0, (parseFloat(cashAmount) || 0) + (parseFloat(mpesaAmount) || 0) - parseFloat(pForm.selling_price)))}</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  <Button type="submit" className="w-full" size="lg" disabled={productMutation.isPending || isMpesaProcessing || !pForm.finished_product_id || !pForm.customer_name || !pForm.selling_price || (paymentMethod !== 'cash' && !pForm.mpesa_code)}>
+                  <Button type="submit" className="w-full" size="lg"
+                    disabled={productMutation.isPending || isMpesaProcessing || !pForm.finished_product_id || !pForm.customer_name || !pForm.selling_price || (!cashAmount && !mpesaAmount)}>
                     {productMutation.isPending ? <Loader2 className="animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
-                    Complete Product Sale
+                    {paymentMode === 'lipa' ? 'Complete with Instalment Plan' : 'Complete Full Payment'}
                   </Button>
                 </form>
               </CardContent>
@@ -533,10 +687,28 @@ const SalesDashboard = () => {
         {activeView === 'service' && (
           <div className="space-y-4">
             <Button variant="ghost" size="sm" onClick={() => setActiveView('home')}>← Back</Button>
+
+            {/* Payment Mode Selector */}
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setPaymentMode('full')}
+                className={cn("p-4 rounded-xl border-2 text-center transition-all", paymentMode === 'full' ? "border-success bg-success/5" : "border-border hover:border-success/30")}>
+                <Briefcase className={cn("h-6 w-6 mx-auto mb-1", paymentMode === 'full' ? "text-success" : "text-muted-foreground")} />
+                <p className={cn("text-sm font-bold", paymentMode === 'full' ? "text-success" : "text-foreground")}>Full Payment</p>
+                <p className="text-[10px] text-muted-foreground">Pay in full now</p>
+              </button>
+              <button type="button" onClick={() => setPaymentMode('lipa')}
+                className={cn("p-4 rounded-xl border-2 text-center transition-all", paymentMode === 'lipa' ? "border-primary bg-primary/5" : "border-border hover:border-primary/30")}>
+                <TrendingUp className={cn("h-6 w-6 mx-auto mb-1", paymentMode === 'lipa' ? "text-primary" : "text-muted-foreground")} />
+                <p className={cn("text-sm font-bold", paymentMode === 'lipa' ? "text-primary" : "text-foreground")}>Lipa Pole Pole</p>
+                <p className="text-[10px] text-muted-foreground">Instalment plan</p>
+              </button>
+            </div>
+
             <Card className="border">
               <CardContent className="p-4">
                 <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-primary" />Service Booking & Sale
+                  <Briefcase className="h-4 w-4 text-primary" />Service Sale
+                  {paymentMode === 'lipa' && <Badge variant="outline" className="text-[9px]">Lipa Pole Pole</Badge>}
                 </h3>
                 <form onSubmit={(e) => { e.preventDefault(); serviceMutation.mutate(); }} className="space-y-4">
                   <div className="space-y-2">
@@ -570,49 +742,77 @@ const SalesDashboard = () => {
                     <div><Label className="text-xs">Amount (Ksh) *</Label><Input type="number" value={sForm.amount} onChange={e => setSForm(f => ({ ...f, amount: e.target.value }))} className="h-10 text-sm" required /></div>
                   </div>
 
-                  {/* Payment Options */}
-                  <div className="space-y-2 pt-2 border-t">
-                    <Label className="text-xs font-semibold">Payment Method</Label>
-                    <div className="flex gap-2">
-                      <Button type="button" variant={paymentMethod === 'cash' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('cash')}>Cash</Button>
-                      <Button type="button" variant={paymentMethod === 'mpesa_stk' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_stk')}>M-Pesa STK</Button>
-                      <Button type="button" variant={paymentMethod === 'mpesa_till' ? 'default' : 'outline'} className="flex-1 text-[10px] h-8" onClick={() => setPaymentMethod('mpesa_till')}>M-Pesa Till</Button>
-                    </div>
-
-                    {paymentMethod === 'cash' && (
-                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                  {/* Lipa Pole Pole Config */}
+                  {paymentMode === 'lipa' && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-3">
+                      <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5" /> Instalment Plan
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <Label className="text-[10px]">Cash Received (Ksh)</Label>
-                          <Input type="number" value={amountReceived} onChange={e => setAmountReceived(e.target.value)} className="h-9 text-sm" placeholder="Amount from client" />
+                          <Label className="text-[10px]">Deposit (Ksh)</Label>
+                          <Input type="number" value={instalmentConfig.deposit} onChange={e => setInstalmentConfig(f => ({ ...f, deposit: e.target.value }))} className="h-8 text-sm" placeholder="0" min="0" />
                         </div>
-                        {amountReceived && sForm.amount && (
-                          <div className="flex justify-between items-center text-[11px]">
-                            <span className="text-muted-foreground">Change to give:</span>
-                            <span className="font-bold text-success">{fmt(Math.max(0, parseFloat(amountReceived) - parseFloat(sForm.amount)))}</span>
-                          </div>
-                        )}
+                        <div>
+                          <Label className="text-[10px]">Frequency</Label>
+                          <select value={instalmentConfig.frequency} onChange={e => setInstalmentConfig(f => ({ ...f, frequency: e.target.value }))}
+                            className="w-full h-8 rounded-lg border border-input bg-background px-2 text-xs">
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">Instalments</Label>
+                          <Input type="number" min="1" max="24" value={instalmentConfig.num_instalments} onChange={e => setInstalmentConfig(f => ({ ...f, num_instalments: e.target.value }))} className="h-8 text-sm" />
+                        </div>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {(paymentMethod === 'mpesa_stk' || paymentMethod === 'mpesa_till') && (
-                      <div className="bg-accent/30 p-3 rounded-lg space-y-3">
-                        <div className="flex gap-2">
-                          <Button type="button" onClick={() => paymentMethod === 'mpesa_stk' ? handleMpesaStkPush(sForm.amount, sForm.customer_phone, 'service') : handleMpesaTillFetch('service')}
-                            disabled={isMpesaProcessing || (paymentMethod === 'mpesa_stk' && !sForm.customer_phone)}
-                            className="flex-1 h-9 bg-success hover:bg-success/90 text-xs gap-1">
-                            {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
-                            {paymentMethod === 'mpesa_stk' ? 'Send STK Push' : 'Fetch Till Transaction'}
-                          </Button>
+                  {/* Split Payment */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs font-semibold">Payment</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-success" />
+                          <Label className="text-[10px] font-medium">Cash Amount (Ksh)</Label>
                         </div>
-                        <div>
-                          <Label className="text-[10px]">M-Pesa Reference / Code</Label>
-                          <Input value={sForm.mpesa_code} onChange={e => setSForm(f => ({ ...f, mpesa_code: e.target.value.toUpperCase() }))} className="h-9 text-sm uppercase font-mono" placeholder="O-XXXXXX" />
+                        <Input type="number" value={cashAmount} onChange={e => setCashAmount(e.target.value)} className="h-9 text-sm" placeholder="0" min="0" />
+                      </div>
+                      <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-primary" />
+                          <Label className="text-[10px] font-medium">M-Pesa Amount (Ksh)</Label>
                         </div>
+                        <Input type="number" value={mpesaAmount} onChange={e => setMpesaAmount(e.target.value)} className="h-9 text-sm" placeholder="0" min="0" />
+                      </div>
+                    </div>
+                    <div className="bg-accent/30 p-3 rounded-lg space-y-2">
+                      <Label className="text-[10px]">M-Pesa Reference</Label>
+                      <div className="flex gap-2">
+                        <Input value={mpesaCode} onChange={e => setMpesaCode(e.target.value.toUpperCase())} className="h-9 text-sm uppercase font-mono flex-1" placeholder="Code (optional if cash only)" />
+                        <Button type="button" onClick={() => handleMpesaStkPush(sForm.amount, sForm.customer_phone, 'service')}
+                          disabled={isMpesaProcessing || !sForm.customer_phone}
+                          className="h-9 bg-success hover:bg-success/90 text-xs gap-1 shrink-0">
+                          {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                          STK
+                        </Button>
+                      </div>
+                    </div>
+                    {(cashAmount || mpesaAmount) && sForm.amount && (
+                      <div className="flex justify-between items-center text-xs px-1">
+                        <span className="text-muted-foreground">Total received:</span>
+                        <span className="font-bold text-success">{fmt((parseFloat(cashAmount) || 0) + (parseFloat(mpesaAmount) || 0))}</span>
+                        <span className="text-muted-foreground">Change:</span>
+                        <span className="font-bold">{fmt(Math.max(0, (parseFloat(cashAmount) || 0) + (parseFloat(mpesaAmount) || 0) - parseFloat(sForm.amount)))}</span>
                       </div>
                     )}
                   </div>
 
-                  <Button type="submit" className="w-full" size="lg" disabled={serviceMutation.isPending || isMpesaProcessing || !sForm.customer_name || !sForm.amount || (paymentMethod !== 'cash' && !sForm.mpesa_code)}>
+                  <Button type="submit" className="w-full" size="lg"
+                    disabled={serviceMutation.isPending || isMpesaProcessing || !sForm.customer_name || !sForm.amount || (!cashAmount && !mpesaAmount)}>
                     {serviceMutation.isPending ? <Loader2 className="animate-spin" /> : <Briefcase className="h-4 w-4" />}
                     Complete Service Sale
                   </Button>
@@ -660,8 +860,16 @@ const SalesDashboard = () => {
                         <div className="flex items-center gap-2">
                           <Badge variant={s.type === 'Product' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">{s.type}</Badge>
                           <span className="text-sm font-medium text-foreground truncate">{s.name}</span>
+                          {s.payment_status && s.payment_status !== 'paid' && (
+                            <Badge variant={s.payment_status === 'overdue' ? 'destructive' : 'outline'} className="text-[9px] px-1 py-0">
+                              {s.is_lipa ? 'Lipa' : s.payment_status}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-0.5">{s.customer} • <span className="font-mono">{s.mpesa}</span> • {new Date(s.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        {s.payment_status && s.payment_status !== 'paid' && s.amount_paid !== undefined && (
+                          <p className="text-[9px] text-warning mt-0.5">Paid {fmt(s.amount_paid)} of {fmt(s.amount)}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-sm font-bold text-success">{fmt(s.amount)}</span>
@@ -742,7 +950,61 @@ const SalesDashboard = () => {
         {activeView === 'receipt' && receiptId && (
           <div>
             <Button variant="ghost" size="sm" className="mb-3" onClick={() => setActiveView('home')}>← Back</Button>
+
+            {/* Get sale info for payment status display */}
+            {(() => {
+              const sale = receiptType === 'product'
+                ? (mySales || []).find((s: any) => s.id === receiptId) as any
+                : null;
+              return (
+                <>
+                  {sale && (
+                    <div className="mb-3 flex items-center gap-2">
+                      {sale.is_lipa_pole_pole ? (
+                        <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">
+                          <TrendingUp className="h-3 w-3 mr-1" /> Lipa Pole Pole
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-success/10 text-success border-success/20 text-xs">
+                          <ShoppingCart className="h-3 w-3 mr-1" /> Fully Paid
+                        </Badge>
+                      )}
+                      {sale.payment_status === 'partial' && (
+                        <Badge variant="outline" className="text-xs">Partial — Paid {fmt(sale.amount_paid)} of {fmt(sale.selling_price)}</Badge>
+                      )}
+                      {sale.payment_status === 'unpaid' && (
+                        <Badge variant="destructive" className="text-xs">No Deposit</Badge>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
             <SaleReceipt saleId={receiptId} type={receiptType} />
+
+            {/* Payment Transactions */}
+            <Card className="border mt-4">
+              <CardContent className="p-4">
+                <PaymentTransactionsList
+                  saleId={receiptId}
+                  totalAmount={(() => {
+                    const sale = (mySales || []).find((s: any) => s.id === receiptId);
+                    return sale ? (sale as any).selling_price || 0 : 0;
+                  })()}
+                  onPaymentUpdate={() => {
+                    queryClient.invalidateQueries({ queryKey: ['my-product-sales'] });
+                  }}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Lipa Pole Pole: Instalment Schedule + Pay Next Instalment */}
+            {receiptType === 'product' && (() => {
+              const sale = (mySales || []).find((s: any) => s.id === receiptId) as any;
+              if (!sale?.is_lipa_pole_pole) return null;
+              return <InstalmentPaymentSection saleId={receiptId} sale={sale} />;
+            })()}
           </div>
         )}
       </div>
@@ -763,5 +1025,148 @@ const SalesDashboard = () => {
     </div>
   );
 };
+
+/* Instalment Payment Section — shows schedule and allows paying next instalment */
+function InstalmentPaymentSection({ saleId, sale }: { saleId: string; sale: any }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  const { data: instalments, isLoading } = useQuery({
+    queryKey: ['instalment-schedule-view', saleId],
+    queryFn: async () => {
+      const { data } = await supabase.from('instalment_schedule' as any).select('*').eq('sale_id', saleId).order('due_date');
+      return (data || []) as any[];
+    },
+  });
+
+  const [payAmount, setPayAmount] = useState('');
+
+  const list: any[] = instalments || [];
+  const nextDue = list.find((i: any) => i.status === 'pending');
+  const paidCount = list.filter((i: any) => i.status === 'paid').length;
+  const totalDue = list.reduce((s: number, i: any) => s + (i.amount_due || 0), 0);
+  const totalPaid = list.reduce((s: number, i: any) => s + (i.amount_paid || 0), 0);
+
+  const payMutation = useMutation({
+    mutationFn: async () => {
+      if (!nextDue) throw new Error('No pending instalments');
+      const amount = parseFloat(payAmount) || (nextDue.amount_due || 0);
+      if (amount <= 0) throw new Error('Invalid payment amount');
+      if (amount > (nextDue.amount_due || 0)) throw new Error('Amount exceeds instalment due');
+
+      const { error: updateError } = await supabase
+        .from('instalment_schedule' as any)
+        .update({ amount_paid: amount, status: amount >= (nextDue.amount_due || 0) ? 'paid' : 'partial', paid_at: new Date().toISOString() })
+        .eq('id', nextDue.id);
+      if (updateError) throw updateError;
+
+      const newTotalPaid = totalPaid + amount;
+      const paymentStatus = newTotalPaid >= totalDue ? 'paid' : 'partial';
+
+      await supabase.from('sales' as any).update({
+        amount_paid: (sale.amount_paid || 0) + amount,
+        payment_status: paymentStatus,
+      }).eq('id', saleId);
+
+      await supabase.from('payment_transactions' as any).insert({
+        sale_id: saleId,
+        amount,
+        payment_method: 'cash',
+        reference_number: `INSTALMENT-${Date.now().toString().slice(-8)}`,
+        recorded_by: user?.id,
+        notes: `Instalment payment for ${nextDue.due_date}`,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Instalment recorded!' });
+      setPayAmount('');
+      queryClient.invalidateQueries({ queryKey: ['instalment-schedule-view'] });
+      queryClient.invalidateQueries({ queryKey: ['my-product-sales'] });
+      queryClient.invalidateQueries({ queryKey: ['instalment-schedules'] });
+    },
+    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
+  });
+
+  return (
+    <Card className="border border-primary/20 mt-4">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">Instalment Plan</span>
+          <Badge variant="outline" className="text-[10px]">{formatCurrency(sale.selling_price)}</Badge>
+        </div>
+
+        {/* Summary */}
+        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+          <div className="bg-accent/30 rounded-lg p-2">
+            <p className="text-muted-foreground">Total</p>
+            <p className="font-bold text-foreground">{formatCurrency(totalDue)}</p>
+          </div>
+          <div className="bg-success/5 rounded-lg p-2">
+            <p className="text-muted-foreground">Paid</p>
+            <p className="font-bold text-success">{formatCurrency(totalPaid)}</p>
+          </div>
+          <div className="bg-warning/5 rounded-lg p-2">
+            <p className="text-muted-foreground">Remaining</p>
+            <p className="font-bold text-warning">{formatCurrency(Math.max(0, totalDue - totalPaid))}</p>
+          </div>
+        </div>
+
+        {/* Schedule */}
+        {isLoading ? (
+          <div className="space-y-1">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-8 bg-accent animate-pulse rounded" />)}</div>
+        ) : list.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-2">No instalment schedule found</p>
+        ) : (
+          <div className="space-y-1">
+            {list.map((inst: any) => {
+              const isDue = inst.id === nextDue?.id;
+              return (
+                <div key={inst.id} className={cn("flex items-center justify-between py-1.5 px-2 rounded text-xs", 
+                  inst.status === 'paid' ? "bg-success/5" : isDue ? "bg-primary/5 border border-primary/20" : "bg-accent/30"
+                )}>
+                  <span className={cn("font-medium", inst.status === 'paid' ? "text-success" : isDue ? "text-primary" : "text-foreground")}>
+                    {new Date(inst.due_date).toLocaleDateString()}
+                  </span>
+                  <span className="font-bold">{formatCurrency(inst.amount_due)}</span>
+                  {inst.status === 'paid' ? (
+                    <Badge className="text-[8px] bg-success/10 text-success border-success/30">Paid</Badge>
+                  ) : inst.status === 'partial' ? (
+                    <Badge className="text-[8px] bg-warning/10 text-warning border-warning/30">Partial</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[8px]">Pending</Badge>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Pay Next Instalment */}
+        {nextDue && (
+          <div className="border-t pt-3 space-y-2">
+            <p className="text-xs font-medium">Pay Next Instalment (due {new Date(nextDue.due_date).toLocaleDateString()})</p>
+            <div className="flex gap-2">
+              <Input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder={String(nextDue.amount_due)} className="h-10 text-sm" min="0" step="0.01" />
+              <Button onClick={() => payMutation.mutate()} disabled={payMutation.isPending} className="h-10 shrink-0">
+                {payMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pay'}
+              </Button>
+              <Button variant="outline" onClick={() => { setPayAmount(String(nextDue.amount_due)); }} className="h-10 text-xs shrink-0">
+                Full
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!nextDue && paidCount > 0 && (
+          <div className="text-center text-xs text-success font-medium py-2 bg-success/5 rounded-lg">
+            All instalments paid! Fully settled ✓
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default SalesDashboard;

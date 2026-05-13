@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Briefcase, CheckCircle, Loader2, Plus, X, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const serviceCategories = ['Transport', 'Decoration', 'Ceremony', 'Embalming', 'Cleaning', 'Other'];
+const defaultCategories = ['Transport', 'Decoration', 'Ceremony', 'Embalming', 'Cleaning', 'Other'];
 
 const emptyForm = { name: '', category: '', base_price: '0' };
 
@@ -19,7 +19,16 @@ const ServiceManagement = () => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [showForm, setShowForm] = useState(false);
+    const [serviceCategories, setServiceCategories] = useState(defaultCategories);
     const [form, setForm] = useState(emptyForm);
+    useQuery({
+        queryKey: ['service-categories'],
+        queryFn: async () => {
+            const { data } = await supabase.from('material_categories' as any).select('name').eq('is_active', true).order('name');
+            if (data && data.length > 0) setServiceCategories(data.map((c: any) => c.name));
+            return data || [];
+        },
+    });
 
     // All services in catalogue
     const { data: masterServices, isLoading } = useQuery({

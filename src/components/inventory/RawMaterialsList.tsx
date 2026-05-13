@@ -23,7 +23,7 @@ const emptyForm: MaterialForm = {
   name: '', category: '', quantity: '0', unit: '', unit_cost: '0', min_stock_level: '0', supplier_id: '',
 };
 
-const categories = ['Wood', 'Fabric', 'Hardware', 'Paint', 'Glass', 'Adhesive', 'Metal', 'Other'];
+const FALLBACK_CATEGORIES = ['Wood', 'Fabric', 'Hardware', 'Paint', 'Glass', 'Adhesive', 'Metal', 'Other'];
 const units = ['pieces', 'sheets', 'meters', 'feet', 'liters', 'kg', 'rolls', 'boxes', 'pairs'];
 
 const RawMaterialsList = () => {
@@ -32,6 +32,7 @@ const RawMaterialsList = () => {
   const [form, setForm] = useState<MaterialForm>(emptyForm);
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [categories, setCategories] = useState<string[]>(FALLBACK_CATEGORIES);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -43,6 +44,15 @@ const RawMaterialsList = () => {
         .select('*, suppliers(name)')
         .order('name');
       if (error) throw error;
+      return data || [];
+    },
+  });
+
+  useQuery({
+    queryKey: ['mat-categories'],
+    queryFn: async () => {
+      const { data } = await supabase.from('material_categories' as any).select('name').eq('is_active', true).order('name');
+      if (data && data.length > 0) setCategories(data.map((c: any) => c.name));
       return data || [];
     },
   });

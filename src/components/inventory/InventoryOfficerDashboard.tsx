@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw } from 'lucide-react';
+import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw, ArrowLeftRight } from 'lucide-react';
 import InventoryOverview from './InventoryOverview';
 import RawMaterialsList from './RawMaterialsList';
 import SuppliersList from './SuppliersList';
@@ -16,9 +16,10 @@ import DailyReportReminder from '@/components/worker/DailyReportReminder';
 import FinishedProductsList from './FinishedProductsList';
 import ProductRequestProcessing from './ProductRequestProcessing';
 import ProductReturnProcessing from './ProductReturnProcessing';
+import InterbranchTransfersPage from '@/components/admin/InterbranchTransfersPage';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'materials' | 'finished' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'wallet' | 'report';
+type Tab = 'overview' | 'materials' | 'finished' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'transfers' | 'wallet' | 'report';
 
 const tabs: { id: Tab; label: string; icon: typeof Package }[] = [
   { id: 'overview', label: 'Home', icon: LayoutDashboard },
@@ -31,6 +32,7 @@ const tabs: { id: Tab; label: string; icon: typeof Package }[] = [
 const secondaryTabs: { id: Tab; label: string; icon: typeof Package }[] = [
   { id: 'product_requests', label: 'Product Requests', icon: Truck },
   { id: 'product_returns', label: 'Product Returns', icon: RotateCw },
+  { id: 'transfers', label: 'Transfers', icon: ArrowLeftRight },
   { id: 'suppliers', label: 'Suppliers', icon: Users },
   { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
   { id: 'wallet', label: 'Wallet', icon: Wallet },
@@ -126,6 +128,13 @@ const InventoryOfficerDashboard = () => {
             <h2 className="font-display text-lg font-bold text-foreground mb-1">Product Returns</h2>
             <p className="text-xs text-muted-foreground mb-4">Process product returns from sales agents</p>
             <ProductReturnProcessing />
+          </div>
+        )}
+        {activeTab === 'transfers' && (
+          <div>
+            <h2 className="font-display text-lg font-bold text-foreground mb-1">Interbranch Transfers</h2>
+            <p className="text-xs text-muted-foreground mb-4">Transfer stock between branches</p>
+            <InterbranchTransfersPage />
           </div>
         )}
         {activeTab === 'wallet' && <WorkshopWallet />}

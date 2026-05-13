@@ -1,9 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 function base64Encode(str: string): string {
   return btoa(str);
@@ -123,6 +127,28 @@ serve(async (req) => {
         JSON.stringify({ error: `STK Push Failed: ${stkResponse.status}`, details: stkText }),
         { status: stkResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
+    }
+
+    // Store the transaction request so callback can match it
+    try {
+      const stkData = JSON.parse(stkText);
+      const checkoutRequestID = stkData.CheckoutRequestID;
+      if (checkoutRequestID) {
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        await supabase.from("mpesa_transactions").upsert({
+          checkout_request_id: checkoutRequestID,
+          merchant_request_id: stkData.MerchantRequestID,
+          phone: normalizedPhone,
+          amount: amountInt,
+          account_reference: accountReference,
+          transaction_desc: transactionDesc,
+          status: "pending",
+        }, { onConflict: "checkout_request_id" });
+        console.log(`STK request stored: ${checkoutRequestID}`);
+      }
+    } catch (dbErr) {
+      // Non-critical: don't fail the STK push if DB store fails
+      console.error("Failed to store STK request:", dbErr);
     }
 
     return new Response(stkText, {

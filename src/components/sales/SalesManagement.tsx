@@ -5,7 +5,8 @@ import ProductSalesList from '@/components/sales/ProductSalesList';
 import ServiceSalesList from '@/components/sales/ServiceSalesList';
 import ServiceCatalogueManager from '@/components/sales/ServiceCatalogueManager';
 import SaleReceipt from '@/components/sales/SaleReceipt';
-import { LayoutDashboard, ShoppingCart, Briefcase, Receipt, List } from 'lucide-react';
+import ProductUpgradeSection from '@/components/admin/ProductUpgradeSection';
+import { LayoutDashboard, ShoppingCart, Briefcase, Receipt, List, ArrowUpCircle } from 'lucide-react';
 
 const SalesManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -43,6 +44,10 @@ const SalesManagement = () => {
             <List className="h-4 w-4 shrink-0" />
             <span className="truncate">Catalogue</span>
           </TabsTrigger>
+          <TabsTrigger value="upgrades" className="flex-1 min-w-0 gap-1.5 py-2.5 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs sm:text-sm">
+            <ArrowUpCircle className="h-4 w-4 shrink-0" />
+            <span className="truncate">Upgrades</span>
+          </TabsTrigger>
           {receiptSaleId && (
             <TabsTrigger value="receipt" className="flex-1 min-w-0 gap-1.5 py-2.5 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs sm:text-sm">
               <Receipt className="h-4 w-4 shrink-0" />
@@ -55,6 +60,7 @@ const SalesManagement = () => {
         <TabsContent value="products" className="mt-4"><ProductSalesList onViewReceipt={(id) => handleViewReceipt(id, 'product')} /></TabsContent>
         <TabsContent value="services" className="mt-4"><ServiceSalesList onViewReceipt={(id) => handleViewReceipt(id, 'service')} /></TabsContent>
         <TabsContent value="catalogue" className="mt-4"><ServiceCatalogueManager /></TabsContent>
+        <TabsContent value="upgrades" className="mt-4"><ProductUpgradeSection /></TabsContent>
         {receiptSaleId && (
           <TabsContent value="receipt" className="mt-4">
             <SaleReceipt saleId={receiptSaleId} type={receiptType} />

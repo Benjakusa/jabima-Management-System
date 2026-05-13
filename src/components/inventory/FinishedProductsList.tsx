@@ -45,13 +45,7 @@ const emptyExternal: ExternalForm = {
 
 // ─── Coffin types ────────────────────────────────────────────────────────────
 
-const productTypes = [
-    'Simple', 'Half glass', 'High roof',
-    'Executive', 'Dumu', 'Saitoti',
-    'Dragon', 'Tommy', 'Reagan',
-    'English coffin', 'Kupa',
-    'Custom Order',
-];
+const FALLBACK_TYPES = ['Simple', 'Half glass', 'High roof', 'Executive', 'Dumu', 'Saitoti', 'Dragon', 'Tommy', 'Reagan', 'English coffin', 'Kupa', 'Custom Order'];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -64,8 +58,18 @@ const FinishedProductsList = () => {
     const [search, setSearch] = useState('');
     const [filterType, setFilterType] = useState('');
     const [filterSource, setFilterSource] = useState<'' | 'workshop' | 'external'>('');
+    const [productTypes, setProductTypes] = useState<string[]>(FALLBACK_TYPES);
     const { toast } = useToast();
     const queryClient = useQueryClient();
+
+    useQuery({
+        queryKey: ['products-type-list'],
+        queryFn: async () => {
+            const { data } = await supabase.from('products').select('name').eq('is_active', true).order('name');
+            if (data && data.length > 0) setProductTypes(data.map((p: any) => p.name));
+            return data || [];
+        },
+    });
 
     const { data: products, isLoading } = useQuery({
         queryKey: ['finished-products'],

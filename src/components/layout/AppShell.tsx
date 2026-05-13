@@ -2,7 +2,8 @@ import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   LayoutDashboard, Users, Package, Factory, ShoppingCart, 
-  Wallet, FileText, Settings, LogOut, Menu, X, Receipt, ClipboardList
+  Wallet, FileText, Settings, LogOut, Menu, X, Receipt, ClipboardList,
+  Tags, Layers, Store, Truck, GitBranch, UserCog
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,12 @@ const adminNavItems: NavItem[] = [
   { label: 'Production', icon: <Factory className="h-5 w-5" />, id: 'production' },
   { label: 'Sales', icon: <ShoppingCart className="h-5 w-5" />, id: 'sales' },
   { label: 'Wallet', icon: <Wallet className="h-5 w-5" />, id: 'wallet' },
+  { label: 'Products', icon: <Tags className="h-5 w-5" />, id: 'products' },
+  { label: 'Materials', icon: <Layers className="h-5 w-5" />, id: 'materials' },
+  { label: 'Workers', icon: <Users className="h-5 w-5" />, id: 'workers' },
+  { label: 'Shop Items', icon: <Store className="h-5 w-5" />, id: 'shop-items' },
+  { label: 'Transfers', icon: <Truck className="h-5 w-5" />, id: 'transfers' },
+  { label: 'Branches', icon: <GitBranch className="h-5 w-5" />, id: 'branches' },
   { label: 'Expenses', icon: <Receipt className="h-5 w-5" />, id: 'expenses' },
   { label: 'Reports', icon: <FileText className="h-5 w-5" />, id: 'reports' },
   { label: 'Daily Reports', icon: <ClipboardList className="h-5 w-5" />, id: 'daily-reports' },
