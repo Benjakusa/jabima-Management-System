@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Printer, Share2, Mail, MessageCircle, Download } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface Props {
   saleId: string;
@@ -17,6 +19,8 @@ const COMPANY = {
   tagline: 'Honoring Life, Celebrating Memories',
   website: 'www.jabima.co.ke',
 };
+
+const ADMIN_EMAIL = 'info@jabimafuneraldirectors.co.ke';
 
 type PrintSize = 'thermal' | 'a4';
 
@@ -52,6 +56,21 @@ const SaleReceipt = ({ saleId, type }: Props) => {
     },
   });
 
+  const { data: adminProfile } = useQuery({
+    queryKey: ['admin-profile-receipt'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('phone, email')
+        .eq('email', ADMIN_EMAIL)
+        .maybeSingle();
+      return data as { phone: string | null; email: string } | null;
+    },
+  });
+
+  const displayPhone = adminProfile?.phone || COMPANY.phone;
+  const displayEmail = adminProfile?.email || COMPANY.email;
+
   const { data: paymentTxns } = useQuery({
     queryKey: ['receipt-payments', saleId],
     enabled: !!sale && type === 'product',
@@ -73,50 +92,32 @@ const SaleReceipt = ({ saleId, type }: Props) => {
   const generatePDFBlob = async (): Promise<Blob | null> => {
     const printContent = receiptRef.current;
     if (!printContent) return null;
-    const size = printSize;
-    const winWidth = size === 'a4' ? '210mm' : '58mm';
-    const padding = size === 'a4' ? '15mm' : '2mm';
-    const fontSize = size === 'a4' ? '12px' : '9px';
-    
-    const html = `
-      <!DOCTYPE html>
-      <html><head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Receipt - ${COMPANY.name}</title>
-        <style>
-          @page { margin: 0; size: ${size === 'a4' ? 'A4' : '58mm auto'}; }
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Courier New', Courier, monospace; 
-            width: ${winWidth}; 
-            margin: 0 auto;
-            padding: ${padding}; 
-            font-size: ${fontSize}; 
-            line-height: 1.3;
-            background: white;
-          }
-          .header { text-align: center; margin-bottom: 8px; }
-          .logo { width: ${size === 'a4' ? '80px' : '40px'}; height: ${size === 'a4' ? '80px' : '40px'}; }
-          .company { font-size: ${size === 'a4' ? '16px' : '10px'}; font-weight: bold; }
-          .tagline { font-size: ${size === 'a4' ? '10px' : '7px'}; font-style: italic; }
-          .contact { font-size: ${size === 'a4' ? '9px' : '7px'}; }
-          .title { font-size: ${size === 'a4' ? '14px' : '11px'}; font-weight: bold; margin: 6px 0; }
-          .divider { border-bottom: 1px dashed #000; margin: 6px 0; }
-          .divider-solid { border-bottom: 2px solid #000; margin: 8px 0; }
-          .row { display: flex; justify-content: space-between; }
-          .row .label { color: #666; }
-          .row .value { text-align: right; max-width: 65%; word-break: break-word; }
-          .row.mono { font-family: monospace; }
-          .total-box { text-align: center; padding: 8px; border: 2px solid #22c55e; margin: 8px 0; }
-          .total-label { font-size: ${size === 'a4' ? '12px' : '9px'}; }
-          .total-amount { font-size: ${size === 'a4' ? '20px' : '14px'}; font-weight: bold; color: #16a34a; }
-          .footer { text-align: center; font-size: ${size === 'a4' ? '9px' : '7px'}; margin-top: 10px; }
-          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        </style>
-      </head><body>${printContent.innerHTML}</body></html>
-    `;
-    
-    return new Blob([html], { type: 'text/html' });
+
+    const canvas = await html2canvas(printContent, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      allowTaint: false,
+      useCORS: true,
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const imgWidth = 190;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    const pdf = new jsPDF({
+      orientation: imgHeight > imgWidth ? 'portrait' : 'portrait',
+      unit: 'mm',
+      format: printSize === 'a4' ? 'a4' : [58, Math.max(imgHeight, 80)],
+    });
+
+    if (printSize === 'thermal') {
+      pdf.addImage(imgData, 'PNG', 0, 0, 58, imgHeight * (58 / imgWidth));
+    } else {
+      pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+    }
+
+    return pdf.output('blob');
   };
 
 const formatReceiptText = () => {
@@ -144,37 +145,69 @@ const formatReceiptText = () => {
     }
 
     const todayStr = new Date(sale.created_at).toISOString().slice(0,10).replace(/-/g,'');
-    return `${COMPANY.name}\nTel: ${COMPANY.phone}\nEmail: ${COMPANY.email}\n\n══════════════════════════════\nSALES RECEIPT\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\n══════════════════════════════\n\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nTime: ${new Date(sale.created_at).toLocaleTimeString()}\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\n\nCustomer: ${sale.customer_name}${sale.customer_phone ? `\nPhone: ${sale.customer_phone}` : ''}\n\n──────────────────────────────\n${paymentLines}\n\n══════════════════════════════\nTOTAL: Ksh ${amount.toLocaleString()}\n══════════════════════════════\n\nServed by: ${officerProfile?.full_name || 'Staff'}\nThank you for choosing\nJabima Funeral Directors`;
+    return `${COMPANY.name}\nTel: ${displayPhone}\nEmail: ${displayEmail}\n\n══════════════════════════════\nSALES RECEIPT\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\n══════════════════════════════\n\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nTime: ${new Date(sale.created_at).toLocaleTimeString()}\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\n\nCustomer: ${sale.customer_name}${sale.customer_phone ? `\nPhone: ${sale.customer_phone}` : ''}\n\n──────────────────────────────\n${paymentLines}\n\n══════════════════════════════\nTOTAL: Ksh ${amount.toLocaleString()}\n══════════════════════════════\n\nServed by: ${officerProfile?.full_name || 'Staff'}\nThank you for choosing\nJabima Funeral Directors`;
   };
 
   const sharePDFViaWhatsApp = async () => {
     if (!sale) return;
     const blob = await generatePDFBlob();
     if (!blob) return;
-    
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64data = reader.result as string;
-      const text = `Sales Receipt - ${COMPANY.name}\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\n\nPlease find attached receipt.`;
-      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(url, '_blank');
-    };
-    reader.readAsDataURL(blob);
+
+    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: `Sales Receipt - ${COMPANY.name}`,
+          text: `Receipt #${sale.id.slice(0, 8).toUpperCase()} from ${COMPANY.name}. Amount: Ksh ${(type === 'product' ? (sale as any).selling_price : (sale as any).amount).toLocaleString()}`,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name !== 'AbortError') console.error('Share failed:', err);
+      }
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const sharePDFViaEmail = async () => {
     if (!sale) return;
     const blob = await generatePDFBlob();
     if (!blob) return;
-    
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const subject = `Sales Receipt - ${sale.id.slice(0, 8).toUpperCase()}`;
-      const body = `Dear Customer,\n\nPlease find attached your sales receipt from ${COMPANY.name}.\n\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\nAmount: Ksh ${(type === 'product' ? (sale as any).selling_price : (sale as any).amount).toLocaleString()}\n\nThank you for choosing ${COMPANY.name}.\n\nBest regards,\n${COMPANY.name}`;
-      const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      window.location.href = mailtoUrl;
-    };
-    reader.readAsDataURL(blob);
+
+    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: `Sales Receipt - ${COMPANY.name}`,
+          text: `Receipt #${sale.id.slice(0, 8).toUpperCase()} from ${COMPANY.name}. Amount: Ksh ${(type === 'product' ? (sale as any).selling_price : (sale as any).amount).toLocaleString()}`,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name !== 'AbortError') console.error('Share failed:', err);
+      }
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const downloadPDF = () => {
@@ -287,7 +320,7 @@ const formatReceiptText = () => {
             style={{ width: printSize === 'a4' ? '72px' : '40px', height: printSize === 'a4' ? '72px' : '40px', objectFit: 'contain' }} />
           <h2 className="font-bold" style={{ fontSize: printSize === 'a4' ? '18px' : '11px', textAlign: 'center' }}>{COMPANY.name}</h2>
           <p className="italic" style={{ fontSize: printSize === 'a4' ? '10px' : '7px', color: '#666', textAlign: 'center' }}>{COMPANY.tagline}</p>
-          <p style={{ fontSize: printSize === 'a4' ? '9px' : '6px', color: '#444', textAlign: 'center' }}>{COMPANY.phone} &bull; {COMPANY.email}</p>
+          <p style={{ fontSize: printSize === 'a4' ? '9px' : '6px', color: '#444', textAlign: 'center' }}>{displayPhone} &bull; {displayEmail}</p>
           <p style={{ fontSize: printSize === 'a4' ? '9px' : '6px', color: '#444', textAlign: 'center' }}>{COMPANY.website}</p>
           {branch && (
             <p style={{ fontSize: printSize === 'a4' ? '9px' : '6px', color: '#444', textAlign: 'center' }}>{branch.name}{branch.location ? ` - ${branch.location}` : ''}</p>

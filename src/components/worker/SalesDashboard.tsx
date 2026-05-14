@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   LogOut, ShoppingCart, Briefcase, Loader2, Receipt, Wallet,
   LayoutDashboard, FileText, Target, Package, TrendingUp, Clock,
-  ClipboardList, RotateCcw, Wrench
+  ClipboardList, RotateCcw, Wrench, Truck, CheckCircle, XCircle
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
@@ -24,7 +24,7 @@ import ProductRequests from './ProductRequests';
 import ProductReturns from './ProductReturns';
 import ServiceManagement from './ServiceManagement';
 
-type View = 'home' | 'product' | 'service' | 'receipt' | 'wallet' | 'report' | 'log' | 'requests' | 'returns' | 'my_services';
+type View = 'home' | 'product' | 'service' | 'receipt' | 'wallet' | 'report' | 'log' | 'requests' | 'returns' | 'my_services' | 'incoming_transfers' | 'transfer_out';
 
 const SalesDashboard = () => {
   const { user, profile, signOut } = useAuth();
@@ -145,6 +145,97 @@ const SalesDashboard = () => {
       return data || [];
     },
     enabled: !!receiptId,
+  });
+
+  const { data: incomingTransfers, isLoading: loadingIncoming } = useQuery({
+    queryKey: ['incoming-interbranch-transfers', profile?.branch_id],
+    queryFn: async () => {
+      if (!profile?.branch_id) return [];
+      const { data, error } = await supabase
+        .from('interbranch_transfers' as any)
+        .select('*, from_branch:branches!from_branch_id(name), finished_products(product_type, batch_number)')
+        .eq('to_branch_id', profile.branch_id)
+        .in('status', ['in_transit'])
+        .order('transfer_date', { ascending: false });
+      if (error) throw error;
+      return (data || []) as any[];
+    },
+    enabled: !!user && !!profile?.branch_id,
+  });
+
+  const acceptTransferMutation = useMutation({
+    mutationFn: async (transfer: any) => {
+      const now = new Date().toISOString();
+
+      const { error: updateErr } = await supabase
+        .from('interbranch_transfers' as any)
+        .update({ status: 'received' })
+        .eq('id', transfer.id);
+      if (updateErr) throw updateErr;
+
+      const { error: invErr } = await supabase.from('shop_inventory' as any).insert({
+        finished_product_id: transfer.finished_product_id,
+        branch_id: profile?.branch_id,
+        transferred_at: now,
+        transferred_by: user?.id,
+      });
+      if (invErr) throw invErr;
+    },
+    onSuccess: () => {
+      toast({ title: 'Transfer received — product added to your branch' });
+      queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['available-products'] });
+    },
+    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
+  });
+
+  const { data: myBranchInventory } = useQuery({
+    queryKey: ['my-branch-inventory', profile?.branch_id],
+    queryFn: async () => {
+      if (!profile?.branch_id) return [];
+      const { data } = await supabase
+        .from('shop_inventory' as any)
+        .select('*, finished_products(id, product_type, batch_number)')
+        .eq('branch_id', profile.branch_id);
+      return (data || []) as any[];
+    },
+    enabled: !!profile?.branch_id,
+  });
+
+  const { data: allBranches } = useQuery({
+    queryKey: ['all-branches'],
+    queryFn: async () => {
+      const { data } = await supabase.from('branches').select('id, name').order('name');
+      return data || [];
+    },
+  });
+
+  const [transferForm, setTransferForm] = useState({ shop_inventory_id: '', to_branch_id: '', notes: '' });
+
+  const sendTransferMutation = useMutation({
+    mutationFn: async () => {
+      if (!transferForm.shop_inventory_id || !transferForm.to_branch_id) throw new Error('Select product and destination branch');
+      if (!profile?.branch_id) throw new Error('You must be assigned to a branch');
+      const item = (myBranchInventory || []).find((i: any) => i.id === transferForm.shop_inventory_id);
+      if (!item) throw new Error('Product not found in your inventory');
+      const { error } = await supabase.from('interbranch_transfers' as any).insert({
+        finished_product_id: item.finished_product_id,
+        from_branch_id: profile.branch_id,
+        to_branch_id: transferForm.to_branch_id,
+        quantity: 1,
+        initiated_by: user?.id,
+        status: 'in_transit',
+        notes: transferForm.notes.trim() || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Transfer sent!' });
+      setTransferForm({ shop_inventory_id: '', to_branch_id: '', notes: '' });
+      queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['my-branch-inventory'] });
+    },
+    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
   });
 
   const fmt = formatCurrency;
@@ -420,6 +511,8 @@ const SalesDashboard = () => {
     { id: 'service' as View, label: 'Service', icon: Briefcase },
     { id: 'requests' as View, label: 'Req', icon: ClipboardList },
     { id: 'returns' as View, label: 'Ret', icon: RotateCcw },
+    { id: 'incoming_transfers' as View, label: 'Trans In', icon: Truck },
+    { id: 'transfer_out' as View, label: 'Send', icon: Truck },
     { id: 'my_services' as View, label: 'Services', icon: Wrench },
   ];
 
@@ -819,6 +912,108 @@ const SalesDashboard = () => {
                 </form>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* INCOMING TRANSFERS */}
+        {activeView === 'incoming_transfers' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
+                <Truck className="h-4 w-4 text-primary" /> Incoming Transfers
+              </h3>
+            </div>
+
+            {loadingIncoming ? (
+              <div className="space-y-2">
+                {[1, 2].map(i => <div key={i} className="h-24 bg-accent animate-pulse rounded-xl" />)}
+              </div>
+            ) : !incomingTransfers || incomingTransfers.length === 0 ? (
+              <Card className="border">
+                <CardContent className="p-8 text-center">
+                  <Truck className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">No incoming transfers</p>
+                </CardContent>
+              </Card>
+            ) : (
+              incomingTransfers.map((t: any) => (
+                <Card key={t.id} className="border border-primary/10">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{t.finished_products?.product_type || 'Unknown Product'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          From: {t.from_branch?.name || 'Warehouse'}
+                        </p>
+                        {t.notes && (
+                          <p className="text-[10px] text-muted-foreground italic mt-1">Notes: {t.notes}</p>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0">
+                        {new Date(t.transfer_date).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => acceptTransferMutation.mutate(t)}
+                      disabled={acceptTransferMutation.isPending}
+                      className="w-full gap-1 text-xs"
+                    >
+                      {acceptTransferMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                      Accept Transfer
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* TRANSFER OUT */}
+        {activeView === 'transfer_out' && (
+          <div className="space-y-3">
+            <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
+              <Truck className="h-4 w-4 text-primary" /> Send Product to Another Branch
+            </h3>
+
+            {!profile?.branch_id ? (
+              <Card className="border"><CardContent className="p-6 text-center text-sm text-muted-foreground">You need to be assigned to a branch to send transfers.</CardContent></Card>
+            ) : (
+              <Card className="border border-primary/10">
+                <CardContent className="p-4">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Product from your branch *</Label>
+                      <select value={transferForm.shop_inventory_id} onChange={(e) => setTransferForm(f => ({ ...f, shop_inventory_id: e.target.value }))}
+                        className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm" required>
+                        <option value="">Choose product...</option>
+                        {(myBranchInventory || []).map((i: any) => (
+                          <option key={i.id} value={i.id}>{i.finished_products?.product_type || 'Unknown'} {i.finished_products?.batch_number ? `(${i.finished_products.batch_number})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Destination Branch *</Label>
+                      <select value={transferForm.to_branch_id} onChange={(e) => setTransferForm(f => ({ ...f, to_branch_id: e.target.value }))}
+                        className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm" required>
+                        <option value="">Select branch...</option>
+                        {(allBranches || []).filter((b: any) => b.id !== profile?.branch_id).map((b: any) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Notes</Label>
+                      <Textarea value={transferForm.notes} onChange={(e) => setTransferForm(f => ({ ...f, notes: e.target.value }))} placeholder="Transfer reason..." className="min-h-[50px] text-sm" />
+                    </div>
+                    <Button onClick={() => sendTransferMutation.mutate()} disabled={sendTransferMutation.isPending || !transferForm.shop_inventory_id || !transferForm.to_branch_id} className="w-full gap-1 text-xs" size="lg">
+                      {sendTransferMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
+                      Send Transfer
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 

@@ -7,17 +7,33 @@
 -- 1. ENUM TYPES
 -- ========================
 
-CREATE TYPE public.app_role AS ENUM ('admin', 'inventory_officer', 'workshop_worker', 'sales_officer');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role' AND typnamespace = 'public'::regnamespace) THEN
+    CREATE TYPE public.app_role AS ENUM ('admin', 'inventory_officer', 'workshop_worker', 'sales_officer');
+  END IF;
+END $$;
 
-CREATE TYPE public.payment_type AS ENUM ('daily_wage', 'per_stage', 'per_product', 'commission');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_type' AND typnamespace = 'public'::regnamespace) THEN
+    CREATE TYPE public.payment_type AS ENUM ('daily_wage', 'per_stage', 'per_product', 'commission');
+  END IF;
+END $$;
 
-CREATE TYPE public.production_stage AS ENUM (
-  'wood_cutting', 'frame_assembly', 'board_fitting', 'sanding',
-  'fabric_lining', 'painting', 'handle_installation', 'glass_installation',
-  'final_assembly', 'quality_inspection'
-);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'production_stage' AND typnamespace = 'public'::regnamespace) THEN
+    CREATE TYPE public.production_stage AS ENUM (
+      'wood_cutting', 'frame_assembly', 'board_fitting', 'sanding',
+      'fabric_lining', 'painting', 'handle_installation', 'glass_installation',
+      'final_assembly', 'quality_inspection'
+    );
+  END IF;
+END $$;
 
-CREATE TYPE public.product_status AS ENUM ('in_production', 'completed', 'transferred', 'sold');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'product_status' AND typnamespace = 'public'::regnamespace) THEN
+    CREATE TYPE public.product_status AS ENUM ('in_production', 'completed', 'transferred', 'sold');
+  END IF;
+END $$;
 
 
 -- ========================
@@ -25,7 +41,7 @@ CREATE TYPE public.product_status AS ENUM ('in_production', 'completed', 'transf
 -- ========================
 
 -- Profiles
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
   full_name TEXT NOT NULL,
@@ -39,7 +55,7 @@ CREATE TABLE public.profiles (
 );
 
 -- User roles
-CREATE TABLE public.user_roles (
+CREATE TABLE IF NOT EXISTS public.user_roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   role app_role NOT NULL,
@@ -47,7 +63,7 @@ CREATE TABLE public.user_roles (
 );
 
 -- Branches
-CREATE TABLE public.branches (
+CREATE TABLE IF NOT EXISTS public.branches (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   location TEXT,
@@ -56,10 +72,11 @@ CREATE TABLE public.branches (
 
 -- Add FK from profiles to branches
 ALTER TABLE public.profiles
+  DROP CONSTRAINT IF EXISTS profiles_branch_id_fkey,
   ADD CONSTRAINT profiles_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id);
 
 -- Payment configs
-CREATE TABLE public.payment_configs (
+CREATE TABLE IF NOT EXISTS public.payment_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   payment_type payment_type NOT NULL,
@@ -70,7 +87,7 @@ CREATE TABLE public.payment_configs (
 );
 
 -- Wallets
-CREATE TABLE public.wallets (
+CREATE TABLE IF NOT EXISTS public.wallets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
   pending_earnings DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -80,7 +97,7 @@ CREATE TABLE public.wallets (
 );
 
 -- Wallet transactions
-CREATE TABLE public.wallet_transactions (
+CREATE TABLE IF NOT EXISTS public.wallet_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   wallet_id UUID REFERENCES public.wallets(id) ON DELETE CASCADE NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
@@ -92,7 +109,7 @@ CREATE TABLE public.wallet_transactions (
 );
 
 -- Suppliers
-CREATE TABLE public.suppliers (
+CREATE TABLE IF NOT EXISTS public.suppliers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   contact TEXT,
@@ -101,7 +118,7 @@ CREATE TABLE public.suppliers (
 );
 
 -- Inventory materials (raw materials)
-CREATE TABLE public.inventory_materials (
+CREATE TABLE IF NOT EXISTS public.inventory_materials (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   category TEXT NOT NULL,
@@ -115,7 +132,7 @@ CREATE TABLE public.inventory_materials (
 );
 
 -- Service equipment inventory
-CREATE TABLE public.inventory_services (
+CREATE TABLE IF NOT EXISTS public.inventory_services (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   category TEXT NOT NULL,
@@ -127,7 +144,7 @@ CREATE TABLE public.inventory_services (
 );
 
 -- Production orders
-CREATE TABLE public.production_orders (
+CREATE TABLE IF NOT EXISTS public.production_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_type TEXT NOT NULL,
   status product_status NOT NULL DEFAULT 'in_production',
@@ -146,7 +163,7 @@ CREATE TABLE public.production_orders (
 );
 
 -- Stage assignments (worker → stage mapping)
-CREATE TABLE public.stage_assignments (
+CREATE TABLE IF NOT EXISTS public.stage_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   stage production_stage NOT NULL,
@@ -154,7 +171,7 @@ CREATE TABLE public.stage_assignments (
 );
 
 -- Stage logs (tracking each stage completion)
-CREATE TABLE public.stage_logs (
+CREATE TABLE IF NOT EXISTS public.stage_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   production_order_id UUID REFERENCES public.production_orders(id) ON DELETE CASCADE NOT NULL,
   stage production_stage NOT NULL,
@@ -165,7 +182,7 @@ CREATE TABLE public.stage_logs (
 );
 
 -- Product material usage
-CREATE TABLE public.product_material_usage (
+CREATE TABLE IF NOT EXISTS public.product_material_usage (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   production_order_id UUID REFERENCES public.production_orders(id) ON DELETE CASCADE NOT NULL,
   material_id UUID REFERENCES public.inventory_materials(id) NOT NULL,
@@ -177,7 +194,7 @@ CREATE TABLE public.product_material_usage (
 );
 
 -- Material requests
-CREATE TABLE public.material_requests (
+CREATE TABLE IF NOT EXISTS public.material_requests (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   production_order_id UUID NOT NULL REFERENCES public.production_orders(id),
   material_id UUID NOT NULL REFERENCES public.inventory_materials(id),
@@ -193,7 +210,7 @@ CREATE TABLE public.material_requests (
 );
 
 -- Material returns
-CREATE TABLE public.material_returns (
+CREATE TABLE IF NOT EXISTS public.material_returns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   production_order_id UUID NOT NULL REFERENCES public.production_orders(id),
   material_id UUID NOT NULL REFERENCES public.inventory_materials(id),
@@ -207,7 +224,7 @@ CREATE TABLE public.material_returns (
 );
 
 -- Finished products
-CREATE TABLE public.finished_products (
+CREATE TABLE IF NOT EXISTS public.finished_products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   production_order_id UUID REFERENCES public.production_orders(id) NOT NULL,
   product_type TEXT NOT NULL,
@@ -218,8 +235,11 @@ CREATE TABLE public.finished_products (
   status product_status NOT NULL DEFAULT 'completed'
 );
 
+ALTER TABLE public.finished_products ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+ALTER TABLE public.finished_products ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES auth.users(id);
+
 -- Shop inventory (products at branches)
-CREATE TABLE public.shop_inventory (
+CREATE TABLE IF NOT EXISTS public.shop_inventory (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   finished_product_id UUID REFERENCES public.finished_products(id) NOT NULL,
   branch_id UUID REFERENCES public.branches(id) NOT NULL,
@@ -228,7 +248,7 @@ CREATE TABLE public.shop_inventory (
 );
 
 -- Sales
-CREATE TABLE public.sales (
+CREATE TABLE IF NOT EXISTS public.sales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   finished_product_id UUID REFERENCES public.finished_products(id) NOT NULL,
   product_type TEXT NOT NULL,
@@ -242,7 +262,7 @@ CREATE TABLE public.sales (
 );
 
 -- Service sales
-CREATE TABLE public.service_sales (
+CREATE TABLE IF NOT EXISTS public.service_sales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   service_name TEXT NOT NULL,
   description TEXT,
@@ -256,7 +276,7 @@ CREATE TABLE public.service_sales (
 );
 
 -- Expenses
-CREATE TABLE public.expenses (
+CREATE TABLE IF NOT EXISTS public.expenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   category TEXT NOT NULL,
   description TEXT,
@@ -267,13 +287,42 @@ CREATE TABLE public.expenses (
 );
 
 -- Daily reports
-CREATE TABLE public.daily_reports (
+CREATE TABLE IF NOT EXISTS public.daily_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   report_date DATE NOT NULL DEFAULT CURRENT_DATE,
   summary TEXT,
   tasks_completed INT DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Products catalog
+CREATE TABLE IF NOT EXISTS public.products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  category text,
+  description text,
+  selling_price numeric DEFAULT 0,
+  is_active boolean DEFAULT true,
+  created_by uuid REFERENCES auth.users(id),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Interbranch transfers
+CREATE TABLE IF NOT EXISTS public.interbranch_transfers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id uuid REFERENCES public.products(id),
+  finished_product_id uuid REFERENCES public.finished_products(id),
+  from_branch_id uuid REFERENCES public.branches(id),
+  to_branch_id uuid REFERENCES public.branches(id),
+  quantity integer DEFAULT 1,
+  transfer_date timestamptz DEFAULT now(),
+  initiated_by uuid REFERENCES auth.users(id),
+  approved_by uuid REFERENCES auth.users(id),
+  status text DEFAULT 'pending'
+    CHECK (status IN ('pending','in_transit','received','cancelled')),
+  notes text
 );
 
 
@@ -302,6 +351,8 @@ ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.interbranch_transfers ENABLE ROW LEVEL SECURITY;
 
 
 -- ========================
@@ -309,7 +360,7 @@ ALTER TABLE public.daily_reports ENABLE ROW LEVEL SECURITY;
 -- ========================
 
 -- Role checking helper (SECURITY DEFINER)
-CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role app_role)
+CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role text)
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
@@ -318,7 +369,7 @@ SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.user_roles
-    WHERE user_id = _user_id AND role = _role
+    WHERE user_id = _user_id AND role::text = _role
   )
 $$;
 
@@ -482,22 +533,27 @@ $$;
 -- 5. TRIGGERS
 -- ========================
 
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
 CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_wallets_updated_at ON public.wallets;
 CREATE TRIGGER update_wallets_updated_at
   BEFORE UPDATE ON public.wallets
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_inventory_materials_updated_at ON public.inventory_materials;
 CREATE TRIGGER update_inventory_materials_updated_at
   BEFORE UPDATE ON public.inventory_materials
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_inventory_services_updated_at ON public.inventory_services;
 CREATE TRIGGER update_inventory_services_updated_at
   BEFORE UPDATE ON public.inventory_services
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -595,10 +651,21 @@ CREATE POLICY "Inventory officers manage material returns" ON public.material_re
 -- Finished products
 CREATE POLICY "Read finished products" ON public.finished_products FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Admins manage finished products" ON public.finished_products FOR ALL USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Inventory officers can manage finished_products"
+  ON public.finished_products FOR ALL USING (public.has_role(auth.uid(), 'inventory_officer'));
 
 -- Shop inventory
 CREATE POLICY "Read shop inventory" ON public.shop_inventory FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Admins manage shop inventory" ON public.shop_inventory FOR ALL USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Sales officers insert into own shop_inventory"
+  ON public.shop_inventory FOR INSERT TO authenticated WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.user_id = auth.uid()
+        AND profiles.role = 'sales_officer'
+        AND profiles.branch_id = branch_id
+    )
+  );
 
 -- Sales
 CREATE POLICY "Sales officers see own sales" ON public.sales FOR SELECT USING (sales_officer_id = auth.uid());
@@ -621,3 +688,29 @@ CREATE POLICY "Admins manage expenses" ON public.expenses FOR ALL USING (public.
 CREATE POLICY "Users see own reports" ON public.daily_reports FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Users create own reports" ON public.daily_reports FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Admins manage reports" ON public.daily_reports FOR ALL USING (public.has_role(auth.uid(), 'admin'));
+
+-- Products policies
+CREATE POLICY "Authenticated can read products"
+  ON public.products FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage products"
+  ON public.products FOR ALL USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Inventory can manage products"
+  ON public.products FOR ALL USING (public.has_role(auth.uid(), 'inventory_officer'));
+CREATE POLICY "Workshop can manage products"
+  ON public.products FOR ALL USING (public.has_role(auth.uid(), 'workshop_worker'));
+
+-- interbranch_transfers policies
+CREATE POLICY "Authenticated can read interbranch_transfers"
+  ON public.interbranch_transfers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage interbranch_transfers"
+  ON public.interbranch_transfers FOR ALL USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Inventory can manage interbranch_transfers"
+  ON public.interbranch_transfers FOR ALL USING (public.has_role(auth.uid(), 'inventory_officer'));
+
+CREATE POLICY "Destination branch can accept interbranch transfers"
+  ON public.interbranch_transfers FOR UPDATE TO authenticated USING (
+    to_branch_id IN (SELECT branch_id FROM public.profiles WHERE user_id = auth.uid())
+  );
+
+GRANT ALL ON public.products TO authenticated;
+GRANT ALL ON public.interbranch_transfers TO authenticated;
