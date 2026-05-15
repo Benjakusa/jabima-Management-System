@@ -11,20 +11,21 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   LogOut, ShoppingCart, Briefcase, Loader2, Receipt, Wallet,
-  LayoutDashboard, FileText, Target, Package, TrendingUp, Clock,
-  ClipboardList, RotateCcw, Wrench, Truck, CheckCircle, XCircle
+  LayoutDashboard, Target, Package, TrendingUp, Clock,
+  ClipboardList, RotateCcw, Wrench
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
 import PaymentTransactionsList from '@/components/sales/PaymentTransactionsList';
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import ProductRequests from './ProductRequests';
 import ProductReturns from './ProductReturns';
 import ServiceManagement from './ServiceManagement';
 
-type View = 'home' | 'product' | 'service' | 'receipt' | 'wallet' | 'report' | 'log' | 'requests' | 'returns' | 'my_services' | 'incoming_transfers' | 'transfer_out';
+type View = 'home' | 'product' | 'service' | 'receipt' | 'wallet' | 'report' | 'log' | 'requests' | 'returns' | 'my_services';
 
 const SalesDashboard = () => {
   const { user, profile, signOut } = useAuth();
@@ -33,6 +34,8 @@ const SalesDashboard = () => {
   const [activeView, setActiveView] = useState<View>('home');
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [receiptType, setReceiptType] = useState<'product' | 'service'>('product');
+  const [isRequesting, setIsRequesting] = useState(false);
+  const [requestAmount, setRequestAmount] = useState('');
 
   const { data: mySales } = useQuery({
     queryKey: ['my-product-sales', user?.id],
@@ -63,9 +66,14 @@ const SalesDashboard = () => {
           .from('shop_inventory')
           .select('finished_product_id, finished_products(id, product_type, production_cost, completed_at, batch_number)')
           .eq('branch_id', branchId);
-        
+
         if (shopItems && shopItems.length > 0) {
-          return shopItems.map((s: any) => s.finished_products).filter(Boolean);
+          const seen = new Set<string>();
+          return shopItems.map((s: any) => s.finished_products).filter((p: any) => {
+            if (!p || seen.has(p.id)) return false;
+            seen.add(p.id);
+            return true;
+          });
         }
         return [];
       }
@@ -119,6 +127,25 @@ const SalesDashboard = () => {
     enabled: !!user,
   });
 
+  const requestPayoutMutation = useMutation({
+    mutationFn: async () => {
+      const amount = parseFloat(requestAmount);
+      if (!myWallet || myWallet.pending_earnings <= 0) throw new Error('No pending earnings');
+      if (isNaN(amount) || amount <= 0 || amount > myWallet.pending_earnings) throw new Error('Invalid amount');
+
+      const { error } = await supabase.rpc('request_wallet_payout', { p_amount: amount });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Payout requested successfully!' });
+      setIsRequesting(false);
+      setRequestAmount('');
+      queryClient.invalidateQueries({ queryKey: ['my-wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['my-wallet-txns'] });
+    },
+    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
+  });
+
   const { data: walletTxns } = useQuery({
     queryKey: ['my-wallet-txns', myWallet?.id],
     queryFn: async () => {
@@ -147,96 +174,7 @@ const SalesDashboard = () => {
     enabled: !!receiptId,
   });
 
-  const { data: incomingTransfers, isLoading: loadingIncoming } = useQuery({
-    queryKey: ['incoming-interbranch-transfers', profile?.branch_id],
-    queryFn: async () => {
-      if (!profile?.branch_id) return [];
-      const { data, error } = await supabase
-        .from('interbranch_transfers' as any)
-        .select('*, from_branch:branches!from_branch_id(name), finished_products(product_type, batch_number)')
-        .eq('to_branch_id', profile.branch_id)
-        .in('status', ['in_transit'])
-        .order('transfer_date', { ascending: false });
-      if (error) throw error;
-      return (data || []) as any[];
-    },
-    enabled: !!user && !!profile?.branch_id,
-  });
 
-  const acceptTransferMutation = useMutation({
-    mutationFn: async (transfer: any) => {
-      const now = new Date().toISOString();
-
-      const { error: updateErr } = await supabase
-        .from('interbranch_transfers' as any)
-        .update({ status: 'received' })
-        .eq('id', transfer.id);
-      if (updateErr) throw updateErr;
-
-      const { error: invErr } = await supabase.from('shop_inventory' as any).insert({
-        finished_product_id: transfer.finished_product_id,
-        branch_id: profile?.branch_id,
-        transferred_at: now,
-        transferred_by: user?.id,
-      });
-      if (invErr) throw invErr;
-    },
-    onSuccess: () => {
-      toast({ title: 'Transfer received — product added to your branch' });
-      queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
-      queryClient.invalidateQueries({ queryKey: ['available-products'] });
-    },
-    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
-  });
-
-  const { data: myBranchInventory } = useQuery({
-    queryKey: ['my-branch-inventory', profile?.branch_id],
-    queryFn: async () => {
-      if (!profile?.branch_id) return [];
-      const { data } = await supabase
-        .from('shop_inventory' as any)
-        .select('*, finished_products(id, product_type, batch_number)')
-        .eq('branch_id', profile.branch_id);
-      return (data || []) as any[];
-    },
-    enabled: !!profile?.branch_id,
-  });
-
-  const { data: allBranches } = useQuery({
-    queryKey: ['all-branches'],
-    queryFn: async () => {
-      const { data } = await supabase.from('branches').select('id, name').order('name');
-      return data || [];
-    },
-  });
-
-  const [transferForm, setTransferForm] = useState({ shop_inventory_id: '', to_branch_id: '', notes: '' });
-
-  const sendTransferMutation = useMutation({
-    mutationFn: async () => {
-      if (!transferForm.shop_inventory_id || !transferForm.to_branch_id) throw new Error('Select product and destination branch');
-      if (!profile?.branch_id) throw new Error('You must be assigned to a branch');
-      const item = (myBranchInventory || []).find((i: any) => i.id === transferForm.shop_inventory_id);
-      if (!item) throw new Error('Product not found in your inventory');
-      const { error } = await supabase.from('interbranch_transfers' as any).insert({
-        finished_product_id: item.finished_product_id,
-        from_branch_id: profile.branch_id,
-        to_branch_id: transferForm.to_branch_id,
-        quantity: 1,
-        initiated_by: user?.id,
-        status: 'in_transit',
-        notes: transferForm.notes.trim() || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({ title: 'Transfer sent!' });
-      setTransferForm({ shop_inventory_id: '', to_branch_id: '', notes: '' });
-      queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
-      queryClient.invalidateQueries({ queryKey: ['my-branch-inventory'] });
-    },
-    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
-  });
 
   const fmt = formatCurrency;
   const today = new Date().toDateString();
@@ -445,16 +383,17 @@ const SalesDashboard = () => {
     toast({ title: 'Sending STK Push...', description: `Check phone ${phone}` });
 
     try {
-      const { data, error, status } = await supabase.functions.invoke('mpesa-stk', {
+      const invokeResult = await supabase.functions.invoke('mpesa-stk', {
         body: {
           phone,
           amount,
           accountReference: 'JABIMA',
           transactionDesc: type === 'product' ? 'Product Sale' : 'Service Payment',
         },
-      });
+      }) as any;
+      const { data, error } = invokeResult;
 
-      console.log('M-Pesa response:', { data, error, status });
+      console.log('M-Pesa response:', { data, error, status: (invokeResult as any)?.status });
 
       if (error) {
         console.error('M-Pesa invoke error details:', error);
@@ -505,21 +444,19 @@ const SalesDashboard = () => {
     ...(todayServiceSales || []).map(s => ({ type: 'Service' as const, name: s.service_name, amount: s.amount, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code, payment_status: undefined, amount_paid: undefined, is_lipa: undefined })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  const allHistoricalSales = [
+    ...(mySales || []).map(s => ({ type: 'Product' as const, name: s.product_type, amount: s.selling_price, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code, payment_status: (s as any).payment_status, amount_paid: (s as any).amount_paid, is_lipa: (s as any).is_lipa_pole_pole })),
+    ...(myServiceSales || []).map(s => ({ type: 'Service' as const, name: s.service_name, amount: s.amount, date: s.created_at, id: s.id, customer: s.customer_name, mpesa: s.mpesa_code, payment_status: undefined, amount_paid: undefined, is_lipa: undefined })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   const navItems = [
     { id: 'home' as View, label: 'Home', icon: LayoutDashboard },
     { id: 'product' as View, label: 'POS', icon: ShoppingCart },
     { id: 'service' as View, label: 'Service', icon: Briefcase },
+    { id: 'log' as View, label: 'History', icon: Clock },
     { id: 'requests' as View, label: 'Req', icon: ClipboardList },
     { id: 'returns' as View, label: 'Ret', icon: RotateCcw },
-    { id: 'incoming_transfers' as View, label: 'Trans In', icon: Truck },
-    { id: 'transfer_out' as View, label: 'Send', icon: Truck },
-    { id: 'my_services' as View, label: 'Services', icon: Wrench },
-  ];
-
-  const secondaryNavItems = [
-    { id: 'log' as View, label: 'Log', icon: FileText },
     { id: 'wallet' as View, label: 'Wallet', icon: Wallet },
-    { id: 'report' as View, label: 'Report', icon: FileText },
   ];
 
   return (
@@ -605,6 +542,9 @@ const SalesDashboard = () => {
                   </CardContent>
                 </Card>
               ))}
+              <Button variant="outline" className="w-full text-xs mt-2" onClick={() => setActiveView('log')}>
+                View All Sales History
+              </Button>
             </div>
           </div>
         )}
@@ -915,185 +855,120 @@ const SalesDashboard = () => {
           </div>
         )}
 
-        {/* INCOMING TRANSFERS */}
-        {activeView === 'incoming_transfers' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
-                <Truck className="h-4 w-4 text-primary" /> Incoming Transfers
-              </h3>
-            </div>
 
-            {loadingIncoming ? (
-              <div className="space-y-2">
-                {[1, 2].map(i => <div key={i} className="h-24 bg-accent animate-pulse rounded-xl" />)}
-              </div>
-            ) : !incomingTransfers || incomingTransfers.length === 0 ? (
-              <Card className="border">
-                <CardContent className="p-8 text-center">
-                  <Truck className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">No incoming transfers</p>
-                </CardContent>
-              </Card>
-            ) : (
-              incomingTransfers.map((t: any) => (
-                <Card key={t.id} className="border border-primary/10">
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{t.finished_products?.product_type || 'Unknown Product'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          From: {t.from_branch?.name || 'Warehouse'}
-                        </p>
-                        {t.notes && (
-                          <p className="text-[10px] text-muted-foreground italic mt-1">Notes: {t.notes}</p>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground shrink-0">
-                        {new Date(t.transfer_date).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => acceptTransferMutation.mutate(t)}
-                      disabled={acceptTransferMutation.isPending}
-                      className="w-full gap-1 text-xs"
-                    >
-                      {acceptTransferMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                      Accept Transfer
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* TRANSFER OUT */}
-        {activeView === 'transfer_out' && (
-          <div className="space-y-3">
-            <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
-              <Truck className="h-4 w-4 text-primary" /> Send Product to Another Branch
-            </h3>
-
-            {!profile?.branch_id ? (
-              <Card className="border"><CardContent className="p-6 text-center text-sm text-muted-foreground">You need to be assigned to a branch to send transfers.</CardContent></Card>
-            ) : (
-              <Card className="border border-primary/10">
-                <CardContent className="p-4">
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Product from your branch *</Label>
-                      <select value={transferForm.shop_inventory_id} onChange={(e) => setTransferForm(f => ({ ...f, shop_inventory_id: e.target.value }))}
-                        className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm" required>
-                        <option value="">Choose product...</option>
-                        {(myBranchInventory || []).map((i: any) => (
-                          <option key={i.id} value={i.id}>{i.finished_products?.product_type || 'Unknown'} {i.finished_products?.batch_number ? `(${i.finished_products.batch_number})` : ''}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Destination Branch *</Label>
-                      <select value={transferForm.to_branch_id} onChange={(e) => setTransferForm(f => ({ ...f, to_branch_id: e.target.value }))}
-                        className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm" required>
-                        <option value="">Select branch...</option>
-                        {(allBranches || []).filter((b: any) => b.id !== profile?.branch_id).map((b: any) => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Notes</Label>
-                      <Textarea value={transferForm.notes} onChange={(e) => setTransferForm(f => ({ ...f, notes: e.target.value }))} placeholder="Transfer reason..." className="min-h-[50px] text-sm" />
-                    </div>
-                    <Button onClick={() => sendTransferMutation.mutate()} disabled={sendTransferMutation.isPending || !transferForm.shop_inventory_id || !transferForm.to_branch_id} className="w-full gap-1 text-xs" size="lg">
-                      {sendTransferMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
-                      Send Transfer
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
 
         {/* NEW VIEWS */}
         {activeView === 'requests' && <ProductRequests />}
         {activeView === 'returns' && <ProductReturns />}
         {activeView === 'my_services' && <ServiceManagement />}
 
-        {/* DAILY SALES LOG */}
+        {/* DAILY SALES LOG / HISTORY */}
         {activeView === 'log' && (
           <div className="space-y-4">
-            <h3 className="font-display font-semibold text-foreground text-sm">Today's Sales Log</h3>
-            <div className="grid grid-cols-3 gap-2">
-              <Card className="border"><CardContent className="p-2 text-center">
-                <p className="text-[10px] text-muted-foreground">Products</p>
-                <p className="text-sm font-bold text-foreground">{todaySales.length}</p>
-                <p className="text-[10px] text-success font-medium">{fmt(todayProductRevenue)}</p>
-              </CardContent></Card>
-              <Card className="border"><CardContent className="p-2 text-center">
-                <p className="text-[10px] text-muted-foreground">Services</p>
-                <p className="text-sm font-bold text-foreground">{todayServiceSales.length}</p>
-                <p className="text-[10px] text-success font-medium">{fmt(todayServiceRevenue)}</p>
-              </CardContent></Card>
-              <Card className="border"><CardContent className="p-2 text-center">
-                <p className="text-[10px] text-muted-foreground">Total</p>
-                <p className="text-sm font-bold text-foreground">{todaySales.length + todayServiceSales.length}</p>
-                <p className="text-[10px] text-success font-medium">{fmt(todayTotal)}</p>
-              </CardContent></Card>
-            </div>
-            <div className="space-y-1.5">
-              {allSales.length === 0 && (
-                <Card className="border"><CardContent className="p-6 text-center text-sm text-muted-foreground">No sales recorded today</CardContent></Card>
-              )}
-              {allSales.map(s => (
-                <Card key={s.id} className="border">
-                  <CardContent className="p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={s.type === 'Product' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">{s.type}</Badge>
-                          <span className="text-sm font-medium text-foreground truncate">{s.name}</span>
-                          {s.payment_status && s.payment_status !== 'paid' && (
-                            <Badge variant={s.payment_status === 'overdue' ? 'destructive' : 'outline'} className="text-[9px] px-1 py-0">
-                              {s.is_lipa ? 'Lipa' : s.payment_status}
-                            </Badge>
-                          )}
+            <Button variant="ghost" size="sm" onClick={() => setActiveView('home')}>← Back</Button>
+            <h3 className="font-display font-semibold text-foreground text-sm">Sales History</h3>
+
+            <Tabs defaultValue="all" className="w-full">
+              <TabsList className="w-full grid grid-cols-3 bg-secondary/50 p-1 rounded-xl">
+                <TabsTrigger value="all" className="text-xs rounded-lg data-[state=active]:bg-card">All Sales</TabsTrigger>
+                <TabsTrigger value="full" className="text-xs rounded-lg data-[state=active]:bg-card text-success data-[state=active]:text-success">Full Payments</TabsTrigger>
+                <TabsTrigger value="lipa" className="text-xs rounded-lg data-[state=active]:bg-card text-primary data-[state=active]:text-primary">Lipa Pole Pole</TabsTrigger>
+              </TabsList>
+
+              {[
+                { value: 'all', data: allHistoricalSales },
+                { value: 'full', data: allHistoricalSales.filter(s => !s.is_lipa) },
+                { value: 'lipa', data: allHistoricalSales.filter(s => s.is_lipa) }
+              ].map(tab => (
+                <TabsContent key={tab.value} value={tab.value} className="mt-4 space-y-1.5 focus-visible:outline-none">
+                  {tab.data.length === 0 && (
+                    <Card className="border"><CardContent className="p-6 text-center text-sm text-muted-foreground">No records found</CardContent></Card>
+                  )}
+                  {tab.data.map((s: any) => (
+                    <Card key={s.id} className="border">
+                      <CardContent className="p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={s.type === 'Product' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">{s.type}</Badge>
+                              <span className="text-sm font-medium text-foreground truncate">{s.name}</span>
+                              {s.payment_status && s.payment_status !== 'paid' && (
+                                <Badge variant={s.payment_status === 'overdue' ? 'destructive' : 'outline'} className="text-[9px] px-1 py-0 shadow-sm border-warning/30 bg-warning/10 text-warning">
+                                  {s.is_lipa ? 'Lipa Pole Pole' : s.payment_status}
+                                </Badge>
+                              )}
+                              {!s.is_lipa && s.type === 'Product' && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 shadow-sm border-success/30 bg-success/10 text-success">
+                                  Full
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{s.customer} • <span className="font-mono">{s.mpesa}</span> • {new Date(s.date).toLocaleDateString()} {new Date(s.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                            {s.payment_status && s.payment_status !== 'paid' && s.amount_paid !== undefined && (
+                              <p className="text-[9px] text-warning mt-0.5 font-medium">Paid {fmt(s.amount_paid)} of {fmt(s.amount)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-sm font-bold text-success">{fmt(s.amount)}</span>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 bg-muted/50" onClick={() => { setReceiptId(s.id); setReceiptType(s.type === 'Product' ? 'product' : 'service'); setActiveView('receipt'); }}>
+                              <Receipt className="h-3 w-3 text-muted-foreground" />
+                            </Button>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{s.customer} • <span className="font-mono">{s.mpesa}</span> • {new Date(s.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                        {s.payment_status && s.payment_status !== 'paid' && s.amount_paid !== undefined && (
-                          <p className="text-[9px] text-warning mt-0.5">Paid {fmt(s.amount_paid)} of {fmt(s.amount)}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm font-bold text-success">{fmt(s.amount)}</span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setReceiptId(s.id); setReceiptType(s.type === 'Product' ? 'product' : 'service'); setActiveView('receipt'); }}>
-                          <Receipt className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </TabsContent>
               ))}
-            </div>
-            {/* Reconciliation */}
-            {allSales.length > 0 && (
-              <Card className="border border-success/20 bg-success/5">
-                <CardContent className="p-4 text-center">
-                  <p className="text-xs text-muted-foreground mb-1">End-of-Day Total</p>
-                  <p className="text-2xl font-bold font-display text-success">{fmt(todayTotal)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Commission earned: {fmt(todayCommission)}</p>
-                </CardContent>
-              </Card>
-            )}
+            </Tabs>
           </div>
         )}
 
         {/* WALLET */}
         {activeView === 'wallet' && (
           <div className="space-y-4">
-            <h3 className="font-display font-semibold text-foreground text-sm">My Wallet</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display font-semibold text-foreground text-sm">My Wallet</h3>
+              <div className="flex items-center gap-2">
+                {myWallet && (myWallet as any).pending_earnings > 0 && !(myWallet as any).payout_requested && (
+                  isRequesting ? (
+                    <div className="flex items-center gap-1 bg-accent/50 p-1 rounded-lg pr-1">
+                      <Input
+                        type="number"
+                        value={requestAmount}
+                        onChange={e => setRequestAmount(e.target.value)}
+                        placeholder="Ksh..."
+                        className="h-8 w-24 text-xs"
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => requestPayoutMutation.mutate()}
+                        disabled={requestPayoutMutation.isPending || !requestAmount}
+                        className="h-8 text-xs px-2"
+                      >
+                        Confirm
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setIsRequesting(false)} className="h-8 px-2 text-xs">X</Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setIsRequesting(true); setRequestAmount(String((myWallet as any).pending_earnings)); }}
+                      className="h-8 border-primary text-primary hover:bg-primary/10"
+                    >
+                      Request Payout
+                    </Button>
+                  )
+                )}
+                {myWallet && (myWallet as any).payout_requested && (
+                  <span className="text-[10px] font-bold text-warning bg-warning/10 px-2 py-1 rounded-full flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Requested {formatCurrency((myWallet as any).payout_request_amount || 0)}
+                  </span>
+                )}
+              </div>
+            </div>
             {myWallet ? (
               <>
                 <div className="grid grid-cols-3 gap-2">
@@ -1318,7 +1193,7 @@ function InstalmentPaymentSection({ saleId, sale }: { saleId: string; sale: any 
             {list.map((inst: any) => {
               const isDue = inst.id === nextDue?.id;
               return (
-                <div key={inst.id} className={cn("flex items-center justify-between py-1.5 px-2 rounded text-xs", 
+                <div key={inst.id} className={cn("flex items-center justify-between py-1.5 px-2 rounded text-xs",
                   inst.status === 'paid' ? "bg-success/5" : isDue ? "bg-primary/5 border border-primary/20" : "bg-accent/30"
                 )}>
                   <span className={cn("font-medium", inst.status === 'paid' ? "text-success" : isDue ? "text-primary" : "text-foreground")}>

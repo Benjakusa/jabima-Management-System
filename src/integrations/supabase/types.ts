@@ -962,6 +962,8 @@ export type Database = {
           id: string
           paid_earnings: number
           pending_earnings: number
+          payout_request_amount: number | null
+          payout_requested: boolean | null
           updated_at: string
           user_id: string
         }
@@ -970,6 +972,8 @@ export type Database = {
           id?: string
           paid_earnings?: number
           pending_earnings?: number
+          payout_request_amount?: number | null
+          payout_requested?: boolean | null
           updated_at?: string
           user_id: string
         }
@@ -978,6 +982,8 @@ export type Database = {
           id?: string
           paid_earnings?: number
           pending_earnings?: number
+          payout_request_amount?: number | null
+          payout_requested?: boolean | null
           updated_at?: string
           user_id?: string
         }
@@ -1036,6 +1042,12 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      request_wallet_payout: {
+        Args: {
+          p_amount: number
+        }
+        Returns: undefined
       }
     }
     Enums: {

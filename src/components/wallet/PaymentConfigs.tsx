@@ -87,7 +87,9 @@ const PaymentConfigs = () => {
       const payload = {
         user_id: form.user_id,
         payment_type: form.payment_type as any,
-        amount,
+        amount: isPercentageType ? 0 : amount,
+        rate_type: isPercentageType ? 'percentage' : 'fixed',
+        rate_value: isPercentageType ? amount : 0,
         stage: form.payment_type === 'per_stage' && form.stage ? form.stage as any : null,
         description: form.description.trim() || null,
       };

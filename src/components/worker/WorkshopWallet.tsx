@@ -4,9 +4,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Wallet, Clock, CheckCircle, Banknote } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useState } from 'react';
 
 const WorkshopWallet = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isRequesting, setIsRequesting] = useState(false);
+  const [requestAmount, setRequestAmount] = useState('');
 
   const { data: wallet, isLoading } = useQuery({
     queryKey: ['my-wallet', user?.id],
@@ -29,6 +38,25 @@ const WorkshopWallet = () => {
       return data || [];
     },
     enabled: !!wallet,
+  });
+
+  const requestPayoutMutation = useMutation({
+    mutationFn: async () => {
+      const amount = parseFloat(requestAmount);
+      if (!wallet || wallet.pending_earnings <= 0) throw new Error('No pending earnings');
+      if (isNaN(amount) || amount <= 0 || amount > wallet.pending_earnings) throw new Error('Invalid amount');
+
+      const { error } = await supabase.rpc('request_wallet_payout', { p_amount: amount });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Payout requested successfully!' });
+      setIsRequesting(false);
+      setRequestAmount('');
+      queryClient.invalidateQueries({ queryKey: ['my-wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['my-wallet-transactions'] });
+    },
+    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
   });
 
   if (isLoading) {
@@ -55,7 +83,48 @@ const WorkshopWallet = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="font-display font-semibold text-foreground text-sm">My Wallet</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display font-semibold text-foreground text-sm">My Wallet</h2>
+        <div className="flex items-center gap-2">
+          {(wallet as any).pending_earnings > 0 && !(wallet as any).payout_requested && (
+            isRequesting ? (
+              <div className="flex items-center gap-1 bg-accent/50 p-1 rounded-lg pr-1">
+                <Input
+                  type="number"
+                  value={requestAmount}
+                  onChange={e => setRequestAmount(e.target.value)}
+                  placeholder="Ksh..."
+                  className="h-8 w-24 text-xs"
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  onClick={() => requestPayoutMutation.mutate()}
+                  disabled={requestPayoutMutation.isPending || !requestAmount}
+                  className="h-8 text-xs px-2"
+                >
+                  Confirm
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setIsRequesting(false)} className="h-8 px-2 text-xs">X</Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setIsRequesting(true); setRequestAmount(String((wallet as any).pending_earnings)); }}
+                className="h-8 border-primary text-primary hover:bg-primary/10"
+              >
+                Request Payout
+              </Button>
+            )
+          )}
+          {(wallet as any).payout_requested && (
+            <span className="text-[10px] font-bold text-warning bg-warning/10 px-2 py-1 rounded-full flex items-center gap-1">
+              <Clock className="h-3 w-3" /> Requested {formatCurrency((wallet as any).payout_request_amount || 0)}
+            </span>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         {stats.map(s => (

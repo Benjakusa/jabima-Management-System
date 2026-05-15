@@ -92,9 +92,28 @@ serve(async (req) => {
         const { user_id } = params;
         if (!user_id) throw new Error("user_id required");
 
-        // Delete from auth (cascades to profiles, roles, wallets via FK)
-        const { error } = await adminClient.auth.admin.deleteUser(user_id);
-        if (error) throw error;
+        // Delete wallet data (financial cleanup)
+        const { data: wallet } = await adminClient
+          .from("wallets")
+          .select("id")
+          .eq("user_id", user_id)
+          .maybeSingle();
+
+        if (wallet?.id) {
+          await adminClient.from("wallet_transactions").delete().eq("wallet_id", wallet.id);
+        }
+        await adminClient.from("wallets").delete().eq("user_id", user_id);
+        await adminClient.from("payment_configs").delete().eq("user_id", user_id);
+
+        // Remove profile and roles so user can't access the system
+        await adminClient.from("user_roles").delete().eq("user_id", user_id);
+        await adminClient.from("profiles").delete().eq("user_id", user_id);
+
+        // Ban the auth user to prevent login, but keep the auth record
+        // so historical data (daily_reports, sales, etc.) FK references remain valid
+        await adminClient.auth.admin.updateUserById(user_id, {
+          ban_duration: "876000h",
+        });
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },

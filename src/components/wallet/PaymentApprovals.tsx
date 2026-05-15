@@ -17,7 +17,7 @@ const PaymentApprovals = () => {
   const { data: wallets, isLoading } = useQuery({
     queryKey: ['wallets-pending'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('wallets').select('*').gt('pending_earnings', 0);
+      const { data, error } = await supabase.from('wallets').select('*').gt('pending_earnings', 0).eq('payout_requested', true);
       if (error) throw error;
       return data || [];
     },
@@ -49,17 +49,20 @@ const PaymentApprovals = () => {
 
   const approveMutation = useMutation({
     mutationFn: async (wallet: any) => {
+      const amountToApprove = wallet.payout_request_amount || wallet.pending_earnings;
       const { error } = await supabase.from('wallets').update({
-        approved_earnings: wallet.approved_earnings + wallet.pending_earnings,
-        pending_earnings: 0,
+        approved_earnings: wallet.approved_earnings + amountToApprove,
+        pending_earnings: Math.max(0, wallet.pending_earnings - amountToApprove),
+        payout_requested: false,
+        payout_request_amount: 0,
       }).eq('id', wallet.id);
       if (error) throw error;
 
       await supabase.from('wallet_transactions').insert({
         wallet_id: wallet.id,
-        type: 'approval',
-        amount: wallet.pending_earnings,
-        description: `Approved Ksh ${wallet.pending_earnings.toLocaleString()} in pending earnings`,
+        type: 'approved',
+        amount: amountToApprove,
+        description: `Approved request for ${fmt(amountToApprove)}`,
       });
     },
     onSuccess: () => { toast({ title: 'Earnings approved!' }); invalidateAll(); },
@@ -79,12 +82,12 @@ const PaymentApprovals = () => {
 
       await supabase.from('wallet_transactions').insert({
         wallet_id: payingWallet.id,
-        type: 'payment',
+        type: 'paid',
         amount: payingWallet.approved_earnings,
         description: `Paid Ksh ${payingWallet.approved_earnings.toLocaleString()} via ${payForm.payment_method}`,
         payment_method: payForm.payment_method,
         reference_number: payForm.reference_number || null,
-      } as any);
+      });
     },
     onSuccess: () => {
       toast({ title: 'Payment recorded!' });
@@ -108,10 +111,10 @@ const PaymentApprovals = () => {
       <div>
         <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
           <CheckCircle className="h-4 w-4 text-warning" />
-          Pending Approval ({wallets?.length || 0})
+          Requested Payouts ({wallets?.length || 0})
         </h3>
         {(!wallets || wallets.length === 0) ? (
-          <Card className="border"><CardContent className="p-8 text-center"><p className="text-muted-foreground text-sm">No pending approvals</p></CardContent></Card>
+          <Card className="border"><CardContent className="p-8 text-center"><p className="text-muted-foreground text-sm">No payout requests</p></CardContent></Card>
         ) : (
           <div className="space-y-2">
             {wallets.map((w) => (
@@ -119,7 +122,8 @@ const PaymentApprovals = () => {
                 <CardContent className="p-4 flex items-center justify-between">
                   <div>
                     <p className="font-medium text-foreground">{getName(w.user_id)}</p>
-                    <p className="text-sm font-bold text-warning">{fmt(w.pending_earnings)} pending</p>
+                    <p className="text-sm font-bold text-warning">{fmt(w.payout_request_amount || w.pending_earnings)} requested</p>
+                    <p className="text-[10px] text-muted-foreground">Total pending: {fmt(w.pending_earnings)}</p>
                   </div>
                   <Button onClick={() => approveMutation.mutate(w)} disabled={approveMutation.isPending} size="sm" variant="outline" className="border-success text-success hover:bg-success/10">
                     {approveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}

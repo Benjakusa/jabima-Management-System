@@ -7,59 +7,37 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { RotateCcw, Plus, X, Loader2, Clock, CheckCircle, XCircle, ArrowRight, Warehouse, Building2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import IncomingTransfers from './IncomingTransfers';
+import {
+  Loader2, CheckCircle, XCircle,
+  Truck, Send, Inbox
+} from 'lucide-react';
 
 const ProductReturns = () => {
-    const { user, profile } = useAuth();
+    const { user, profile, refreshProfile } = useAuth();
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const [showForm, setShowForm] = useState(false);
-    const [finishedProductId, setFinishedProductId] = useState('');
-    const [returnDest, setReturnDest] = useState<'warehouse' | 'branch'>('warehouse');
-    const [destinationBranchId, setDestinationBranchId] = useState('');
-    const [reason, setReason] = useState('');
-    const [tab, setTab] = useState<'my' | 'incoming'>('my');
+    const [tab, setTab] = useState<'transfer' | 'receive'>('transfer');
+    const [transferForm, setTransferForm] = useState({ shop_inventory_ids: [] as string[], to_branch_id: '', notes: '' });
 
-    const { data: branchProducts } = useQuery({
-        queryKey: ['branch-products-for-return', profile?.branch_id],
+    const { data: myBranch, isLoading: loadingBranch } = useQuery({
+        queryKey: ['my-profile-branch', user?.id],
         queryFn: async () => {
-            const branchId = profile?.branch_id;
-            if (branchId) {
-                const { data: shopItems } = await supabase
-                    .from('shop_inventory' as any)
-                    .select('*, finished_products(*)')
-                    .eq('branch_id', branchId);
-                if (shopItems && shopItems.length > 0) {
-                    return shopItems.map((s: any) => s.finished_products).filter(Boolean);
-                }
-                return [];
-            }
+            if (!user) return null;
             const { data } = await supabase
-                .from('finished_products')
-                .select('id, product_type, production_cost, completed_at, batch_number')
-                .eq('status', 'completed')
-                .is('branch_id', null)
-                .order('completed_at', { ascending: false });
-            return data || [];
-        },
-        enabled: !!user && !!profile,
-    });
-
-    const { data: myReturns, isLoading } = useQuery({
-        queryKey: ['my-stock-returns', user?.id],
-        queryFn: async () => {
-            const { data, error } = await supabase
-                .from('stock_returns' as any)
-                .select('*, finished_products(id, product_type, batch_number)')
-                .eq('returned_by', user!.id)
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-            return data || [];
+                .from('profiles')
+                .select('branch_id')
+                .eq('user_id', user.id)
+                .maybeSingle();
+            if (data?.branch_id) {
+                await refreshProfile();
+            }
+            return data as { branch_id: string | null } | null;
         },
         enabled: !!user,
+        refetchInterval: 5000,
     });
+
+    const branchId = myBranch?.branch_id || profile?.branch_id;
 
     const { data: branches } = useQuery({
         queryKey: ['branches-list'],
@@ -69,158 +47,249 @@ const ProductReturns = () => {
         },
     });
 
-    const returnMutation = useMutation({
-        mutationFn: async () => {
-            if (!finishedProductId) throw new Error('Please select a product');
-            const { error } = await supabase.from('stock_returns' as any).insert({
-                finished_product_id: finishedProductId,
-                returned_by: user!.id,
-                return_reason: reason.trim() || null,
-                is_unsold: true,
-                destination_branch_id: returnDest === 'branch' ? destinationBranchId : null,
-            });
+    const { data: myBranchInventory } = useQuery({
+        queryKey: ['my-branch-inventory', branchId],
+        queryFn: async () => {
+            if (!branchId) return [];
+            const { data } = await supabase
+                .from('shop_inventory' as any)
+                .select('*, finished_products(id, product_type, batch_number)')
+                .eq('branch_id', branchId);
+            return (data || []) as any[];
+        },
+        enabled: !!branchId,
+    });
+
+    const { data: incomingTransfers, isLoading: loadingIncoming } = useQuery({
+        queryKey: ['incoming-interbranch-transfers', branchId],
+        queryFn: async () => {
+            if (!branchId) return [];
+            const { data, error } = await supabase
+                .from('interbranch_transfers' as any)
+                .select('*, from_branch:branches!from_branch_id(name), finished_products(product_type, batch_number)')
+                .eq('to_branch_id', branchId)
+                .in('status', ['in_transit'])
+                .order('transfer_date', { ascending: false });
             if (error) throw error;
+            return (data || []) as any[];
+        },
+        enabled: !!user && !!branchId,
+    });
+
+    const sendTransferMutation = useMutation({
+        mutationFn: async () => {
+            if (transferForm.shop_inventory_ids.length === 0 || !transferForm.to_branch_id) throw new Error('Select at least one product and destination branch');
+            if (!branchId) throw new Error('You must be assigned to a branch');
+
+            const selectedItems = (myBranchInventory || []).filter((i: any) => transferForm.shop_inventory_ids.includes(i.id));
+            if (selectedItems.length === 0) throw new Error('No valid products selected');
+
+            const records = selectedItems.map((item: any) => ({
+                finished_product_id: item.finished_product_id,
+                from_branch_id: branchId,
+                to_branch_id: transferForm.to_branch_id,
+                quantity: 1,
+                initiated_by: user?.id,
+                status: 'in_transit' as const,
+                notes: transferForm.notes.trim() || null,
+            }));
+
+            const { error: insertErr } = await supabase.from('interbranch_transfers' as any).insert(records);
+            if (insertErr) throw insertErr;
+
+            const { error: deleteErr } = await supabase
+                .from('shop_inventory' as any)
+                .delete()
+                .in('id', transferForm.shop_inventory_ids);
+            if (deleteErr) throw deleteErr;
         },
         onSuccess: () => {
-            toast({ title: 'Return/Transfer submitted' });
-            setShowForm(false);
-            setFinishedProductId('');
-            setReason('');
-            queryClient.invalidateQueries({ queryKey: ['my-stock-returns'] });
-            queryClient.invalidateQueries({ queryKey: ['branch-products-for-return'] });
+            toast({ title: `${transferForm.shop_inventory_ids.length} product(s) transferred!` });
+            setTransferForm({ shop_inventory_ids: [], to_branch_id: '', notes: '' });
+            queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
+            queryClient.invalidateQueries({ queryKey: ['my-branch-inventory'] });
         },
         onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
     });
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'pending': return <Clock className="h-3 w-3 text-warning" />;
-            case 'accepted': return <CheckCircle className="h-3 w-3 text-success" />;
-            case 'rejected': return <XCircle className="h-3 w-3 text-destructive" />;
-            default: return <Clock className="h-3 w-3 text-warning" />;
-        }
-    };
+    const acceptTransferMutation = useMutation({
+        mutationFn: async (transfer: any) => {
+            const now = new Date().toISOString();
+
+            const { error: updateErr } = await supabase
+                .from('interbranch_transfers' as any)
+                .update({ status: 'received' })
+                .eq('id', transfer.id);
+            if (updateErr) throw updateErr;
+
+            const { error: invErr } = await supabase.from('shop_inventory' as any).insert({
+                finished_product_id: transfer.finished_product_id,
+                branch_id: branchId,
+                transferred_at: now,
+                transferred_by: user?.id,
+            });
+            if (invErr) throw invErr;
+        },
+        onSuccess: () => {
+            toast({ title: 'Transfer received — product added to your branch' });
+            queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
+            queryClient.invalidateQueries({ queryKey: ['my-branch-inventory'] });
+        },
+        onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
+    });
 
     return (
         <div className="space-y-4">
-            <div className="flex gap-2">
-                <button onClick={() => setTab('my')}
-                    className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors border",
-                        tab === 'my' ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"
-                    )}>
-                    <RotateCcw className="h-4 w-4" />
-                    My Transfers
+            <div className="flex gap-1.5">
+                <button onClick={() => setTab('transfer')}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors border data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary bg-card text-muted-foreground border-border"
+                    data-active={tab === 'transfer'}>
+                    <Send className="h-4 w-4" />
+                    Transfer
                 </button>
-                <button onClick={() => setTab('incoming')}
-                    className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors border",
-                        tab === 'incoming' ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"
-                    )}>
-                    <ArrowRight className="h-4 w-4" />
-                    Incoming
+                <button onClick={() => setTab('receive')}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors border data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary bg-card text-muted-foreground border-border"
+                    data-active={tab === 'receive'}>
+                    <Inbox className="h-4 w-4" />
+                    Receive
                 </button>
             </div>
 
-            {tab === 'incoming' ? (
-                <IncomingTransfers />
-            ) : (
-                <>
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
-                            <RotateCcw className="h-4 w-4 text-primary" /> My Transfers
-                        </h3>
-                        <Button onClick={() => setShowForm(!showForm)} size="sm" variant={showForm ? 'ghost' : 'default'} className="h-8">
-                            {showForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-                            {showForm ? 'Cancel' : 'Transfer Product'}
-                        </Button>
-                    </div>
+            {loadingBranch && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground p-2">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Checking branch assignment...
+                </div>
+            )}
 
-                    {showForm && (
-                        <Card className="border-primary/20">
-                            <CardContent className="p-4 space-y-3">
-                                <div className="space-y-1.5">
-                                    <Label className="text-xs">Select Product (from {profile?.branch_id ? 'your branch' : 'stock'})</Label>
-                                    <select value={finishedProductId} onChange={e => setFinishedProductId(e.target.value)}
-                                        className="w-full h-9 rounded-lg border border-input bg-background px-3 text-xs">
-                                        <option value="">Choose product...</option>
-                                        {((branchProducts as any) || []).map((p: any) => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.product_type} - {p.batch_number || p.id.slice(0, 8)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+            {tab === 'receive' && (
+                <div className="space-y-3">
+                    <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
+                        <Inbox className="h-4 w-4 text-primary" /> Receive from Other Branches
+                    </h3>
 
-                                <div className="space-y-1.5">
-                                    <Label className="text-xs">Destination</Label>
-                                    <div className="flex gap-2">
-                                        <button type="button" onClick={() => { setReturnDest('warehouse'); setDestinationBranchId(''); }}
-                                            className={cn("flex-1 py-2 rounded-lg text-[10px] font-medium border flex items-center justify-center gap-1.5",
-                                                returnDest === 'warehouse' ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border")}>
-                                            <Warehouse className="h-3.5 w-3.5" />
-                                            Main Warehouse
-                                        </button>
-                                        <button type="button" onClick={() => setReturnDest('branch')}
-                                            className={cn("flex-1 py-2 rounded-lg text-[10px] font-medium border flex items-center justify-center gap-1.5",
-                                                returnDest === 'branch' ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border")}>
-                                            <Building2 className="h-3.5 w-3.5" />
-                                            Other Branch
-                                        </button>
+                    {!branchId ? (
+                        <Card className="border border-warning/30">
+                            <CardContent className="p-6 text-center space-y-3">
+                                <p className="text-sm text-muted-foreground">You are not assigned to a branch yet.</p>
+                                <p className="text-xs text-muted-foreground">Ask an admin to assign you a branch in User Management, then refresh this page.</p>
+                            </CardContent>
+                        </Card>
+                    ) : loadingIncoming ? (
+                        <div className="space-y-2">
+                            {[1, 2].map(i => <div key={i} className="h-24 bg-accent animate-pulse rounded-xl" />)}
+                        </div>
+                    ) : !incomingTransfers || incomingTransfers.length === 0 ? (
+                        <Card className="border">
+                            <CardContent className="p-8 text-center">
+                                <Truck className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                                <p className="text-xs text-muted-foreground">No incoming transfers</p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        incomingTransfers.map((t: any) => (
+                            <Card key={t.id} className="border border-primary/10">
+                                <CardContent className="p-4 space-y-3">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-sm">{t.finished_products?.product_type || 'Unknown Product'}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                From: {t.from_branch?.name || 'Warehouse'}
+                                            </p>
+                                            {t.notes && (
+                                                <p className="text-[10px] text-muted-foreground italic mt-1">Notes: {t.notes}</p>
+                                            )}
+                                        </div>
+                                        <span className="text-[10px] text-muted-foreground shrink-0">
+                                            {new Date(t.transfer_date).toLocaleDateString()}
+                                        </span>
                                     </div>
-                                    {returnDest === 'branch' && (
-                                        <select value={destinationBranchId} onChange={e => setDestinationBranchId(e.target.value)}
-                                            className="w-full h-9 rounded-lg border border-input bg-background px-3 text-xs">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => acceptTransferMutation.mutate(t)}
+                                        disabled={acceptTransferMutation.isPending}
+                                        className="w-full gap-1 text-xs"
+                                    >
+                                        {acceptTransferMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                                        Accept Transfer
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        ))
+                    )}
+                </div>
+            )}
+
+            {tab === 'transfer' && (
+                <div className="space-y-3">
+                    <h3 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
+                        <Send className="h-4 w-4 text-primary" /> Send Product to Another Branch
+                    </h3>
+
+                    {!branchId ? (
+                        <Card className="border border-warning/30">
+                            <CardContent className="p-6 text-center space-y-3">
+                                <p className="text-sm text-muted-foreground">You are not assigned to a branch yet.</p>
+                                <p className="text-xs text-muted-foreground">Ask an admin to assign you a branch in User Management, then refresh this page.</p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <Card className="border border-primary/10">
+                            <CardContent className="p-4">
+                                <div className="space-y-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Products from your branch *</Label>
+                                        <div className="max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2">
+                                            {(myBranchInventory || []).length === 0 && (
+                                                <p className="text-xs text-muted-foreground text-center py-4">No products in your branch inventory</p>
+                                            )}
+                                            {(myBranchInventory || []).map((i: any) => {
+                                                const checked = transferForm.shop_inventory_ids.includes(i.id);
+                                                return (
+                                                    <label key={i.id}
+                                                        className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs hover:bg-accent/30 has-[:checked]:bg-primary/5 has-[:checked]:border-primary/30">
+                                                        <input type="checkbox" checked={checked} onChange={() => {
+                                                            setTransferForm(f => ({
+                                                                ...f,
+                                                                shop_inventory_ids: checked
+                                                                    ? f.shop_inventory_ids.filter(id => id !== i.id)
+                                                                    : [...f.shop_inventory_ids, i.id]
+                                                            }));
+                                                        }} className="rounded" />
+                                                        <span className="font-medium">{i.finished_products?.product_type || 'Unknown'}</span>
+                                                        {i.finished_products?.batch_number && (
+                                                            <span className="text-[10px] text-muted-foreground">({i.finished_products.batch_number})</span>
+                                                        )}
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                        {transferForm.shop_inventory_ids.length > 0 && (
+                                            <p className="text-[10px] text-muted-foreground">{transferForm.shop_inventory_ids.length} product(s) selected</p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Destination Branch *</Label>
+                                        <select value={transferForm.to_branch_id} onChange={(e) => setTransferForm(f => ({ ...f, to_branch_id: e.target.value }))}
+                                            className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm" required>
                                             <option value="">Select branch...</option>
-                                            {(branches || []).filter((b: any) => b.id !== profile?.branch_id).map((b: any) => (
+                                            {(branches || []).filter((b: any) => b.id !== branchId).map((b: any) => (
                                                 <option key={b.id} value={b.id}>{b.name}</option>
                                             ))}
                                         </select>
-                                    )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Notes</Label>
+                                        <Textarea value={transferForm.notes} onChange={(e) => setTransferForm(f => ({ ...f, notes: e.target.value }))} placeholder="Transfer reason..." className="min-h-[50px] text-sm" />
+                                    </div>
+                                    <Button onClick={() => sendTransferMutation.mutate()} disabled={sendTransferMutation.isPending || transferForm.shop_inventory_ids.length === 0 || !transferForm.to_branch_id} className="w-full gap-1 text-xs" size="lg">
+                                        {sendTransferMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                        Send Transfer ({transferForm.shop_inventory_ids.length} product{transferForm.shop_inventory_ids.length !== 1 ? 's' : ''})
+                                    </Button>
                                 </div>
-
-                                <div className="space-y-1.5">
-                                    <Label className="text-xs">Reason</Label>
-                                    <Textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Defective, excess stock, transfer..." className="text-xs min-h-[60px]" />
-                                </div>
-                                <Button className="w-full h-9 text-xs" onClick={() => returnMutation.mutate()} disabled={returnMutation.isPending || !finishedProductId || (returnDest === 'branch' && !destinationBranchId)}>
-                                    {returnMutation.isPending && <Loader2 className="animate-spin mr-2 h-3 w-3" />}
-                                    Submit
-                                </Button>
                             </CardContent>
                         </Card>
                     )}
-
-                    <div className="space-y-2">
-                        {isLoading ? (
-                            <div className="p-6 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></div>
-                        ) : ((myReturns as any) || []).length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-8">No transfers made yet</p>
-                        ) : (
-                            ((myReturns as any) || []).map((ret: any) => (
-                                <Card key={ret.id} className="border">
-                                    <CardContent className="p-3 flex items-center justify-between">
-                                        <div>
-                                            <p className="text-sm font-medium">{ret.finished_products?.product_type || 'Unknown Product'}</p>
-                                            <div className="flex items-center gap-3 mt-0.5 text-[9px] text-muted-foreground">
-                                                <span className="flex items-center gap-1 capitalize">
-                                                    {getStatusIcon(ret.status)}
-                                                    {ret.status}
-                                                </span>
-                                                {ret.destination_branch_id && (
-                                                    <span className="flex items-center gap-1">
-                                                        <ArrowRight className="h-3 w-3" />
-                                                        {branches?.find((b: any) => b.id === ret.destination_branch_id)?.name || 'Branch'}
-                                                    </span>
-                                                )}
-                                                <span>{new Date(ret.created_at).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                        {ret.return_reason && <p className="text-[9px] text-muted-foreground italic truncate max-w-[100px]">{ret.return_reason}</p>}
-                                    </CardContent>
-                                </Card>
-                            ))
-                        )}
-                    </div>
-                </>
+                </div>
             )}
         </div>
     );
