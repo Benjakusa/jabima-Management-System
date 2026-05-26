@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,8 +12,9 @@ import { useToast } from '@/hooks/use-toast';
 import {
   LogOut, ShoppingCart, Briefcase, Loader2, Receipt, Wallet,
   LayoutDashboard, Target, Package, TrendingUp, Clock,
-  ClipboardList, RotateCcw, Wrench
+  ClipboardList, RotateCcw, Wrench, CheckCircle2, XCircle, AlertTriangle
 } from 'lucide-react';
+import { useMpesaPoll } from '@/hooks/useMpesaPoll';
 import { cn, formatCurrency } from '@/lib/utils';
 import SaleReceipt from '@/components/sales/SaleReceipt';
 import PaymentTransactionsList from '@/components/sales/PaymentTransactionsList';
@@ -203,6 +204,18 @@ const SalesDashboard = () => {
 
   // M-Pesa STK tracking
   const [checkoutRequestID, setCheckoutRequestID] = useState('');
+  const [mpesaOverrides, setMpesaOverrides] = useState({ businessShortCode: '', partyB: '' });
+  const [showAdvancedMpesa, setShowAdvancedMpesa] = useState(false);
+
+  // M-Pesa polling for auto-populating receipt number
+  const { mpesaReceiptNumber, pollStatus, isPollActive, startPolling, stopPolling } = useMpesaPoll();
+
+  // Auto-populate mpesaCode when receipt number is fetched
+  useEffect(() => {
+    if (mpesaReceiptNumber && pollStatus === 'confirmed') {
+      setMpesaCode(mpesaReceiptNumber);
+    }
+  }, [mpesaReceiptNumber, pollStatus]);
 
   // Product sale form
   const [pForm, setPForm] = useState({ finished_product_id: '', customer_name: '', customer_phone: '', selling_price: '', mpesa_code: '', branch_id: '', productSearch: '' });
@@ -376,7 +389,7 @@ const SalesDashboard = () => {
     onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
   });
 
-  const handleMpesaStkPush = async (amount: string, phone: string, type: 'product' | 'service') => {
+  const handleMpesaStkPush = async (amount: string, phone: string, type: 'product' | 'service', options?: { businessShortCode?: string, partyB?: string }) => {
     if (!phone) { toast({ variant: 'destructive', title: 'Phone required' }); return; }
     if (!amount || parseFloat(amount) <= 0) { toast({ variant: 'destructive', title: 'Valid amount required' }); return; }
     setIsMpesaProcessing(true);
@@ -389,28 +402,41 @@ const SalesDashboard = () => {
           amount,
           accountReference: 'JABIMA',
           transactionDesc: type === 'product' ? 'Product Sale' : 'Service Payment',
+          transactionType: 'CustomerBuyGoodsOnline', // It is Buy Goods (Till Number)
+          ...options
         },
       }) as any;
       const { data, error } = invokeResult;
 
-      console.log('M-Pesa response:', { data, error, status: (invokeResult as any)?.status });
+      console.log('M-Pesa FULL response data:', JSON.stringify(data, null, 2));
+      console.log('M-Pesa error:', error);
 
       if (error) {
         console.error('M-Pesa invoke error details:', error);
-        // Supabase FunctionsHttpError usually includes the response body in the 'context' or 'details' depending on version
-        // We'll throw a more descriptive error if we can find one
-        const bodyError = (error as any).data?.message || (error as any).data?.error || error.message;
-        throw new Error(bodyError || `Function error: ${status}`);
+        // FunctionsHttpError has a context with the response body
+        let bodyError = error.message;
+        try {
+          const errContext = await (error as any).context?.json?.();
+          console.error('M-Pesa error body:', errContext);
+          bodyError = errContext?.message || errContext?.error || error.message;
+        } catch (_) { /* ignore json parse errors */ }
+        throw new Error(bodyError || `Edge Function error`);
       }
+
+      // Log the response code and description from Safaricom
+      console.log(`Safaricom ResponseCode: "${data?.ResponseCode}", ResponseDescription: "${data?.ResponseDescription}", CustomerMessage: "${data?.CustomerMessage}"`);
 
       if (data?.ResponseCode === "0") {
         setCheckoutRequestID(data.CheckoutRequestID);
+        startPolling(data.CheckoutRequestID);
         toast({
-          title: 'STK Push Sent!',
-          description: `Check your phone for payment prompt. Checkout ID: ${data.CheckoutRequestID}`
+          title: 'STK Push Sent! ✅',
+          description: `Check your phone ${phone} for payment prompt. Waiting for confirmation...`
         });
+      } else if (data?.error) {
+        throw new Error(data.details || data.error);
       } else {
-        throw new Error(data?.error || data?.message || 'Failed to send STK Push');
+        throw new Error(data?.ResponseDescription || data?.message || `Safaricom error code: ${data?.ResponseCode}`);
       }
     } catch (err: any) {
       console.error('M-Pesa Error:', err);
@@ -421,18 +447,33 @@ const SalesDashboard = () => {
     }
   };
 
-  const handleMpesaTillFetch = async (type: 'product' | 'service') => {
-    setIsMpesaProcessing(true);
-    toast({ title: 'Fetching from Till...', description: 'Searching for recent transactions' });
-
-    // Simulate Daraja Till API call
-    setTimeout(() => {
-      setIsMpesaProcessing(false);
-      const mockCode = 'R' + Math.random().toString(36).substring(2, 11).toUpperCase();
-      if (type === 'product') setPForm(f => ({ ...f, mpesa_code: mockCode }));
-      else setSForm(f => ({ ...f, mpesa_code: mockCode }));
-      toast({ title: 'Transaction Linked', description: `Found Ref: ${mockCode}` });
-    }, 2000);
+  // M-Pesa poll status indicator component
+  const MpesaPollStatusBadge = () => {
+    if (pollStatus === 'polling') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-primary animate-pulse">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Waiting for M-Pesa confirmation...</span>
+      </div>
+    );
+    if (pollStatus === 'confirmed') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-success">
+        <CheckCircle2 className="h-3 w-3" />
+        <span>Payment confirmed: {mpesaReceiptNumber}</span>
+      </div>
+    );
+    if (pollStatus === 'failed') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-destructive">
+        <XCircle className="h-3 w-3" />
+        <span>Payment failed — enter code manually</span>
+      </div>
+    );
+    if (pollStatus === 'timeout') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-warning">
+        <AlertTriangle className="h-3 w-3" />
+        <span>Timed out — enter code manually</span>
+      </div>
+    );
+    return null;
   };
 
   const filteredProducts = (finishedProducts || []).filter(p =>
@@ -680,16 +721,36 @@ const SalesDashboard = () => {
                       </div>
                     </div>
                     <div className="bg-accent/30 p-3 rounded-lg space-y-2">
-                      <Label className="text-[10px]">M-Pesa Reference</Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px]">M-Pesa Reference</Label>
+                        <button type="button" onClick={() => setShowAdvancedMpesa(!showAdvancedMpesa)} className="text-[9px] text-primary hover:underline">
+                          {showAdvancedMpesa ? 'Hide Settings' : 'Till Configuration'}
+                        </button>
+                      </div>
+
+                      {showAdvancedMpesa && (
+                        <div className="grid grid-cols-2 gap-2 pb-2 border-b border-border/50 mb-2">
+                          <div>
+                            <Label className="text-[9px]">Store Number</Label>
+                            <Input value={mpesaOverrides.businessShortCode} onChange={e => setMpesaOverrides(f => ({ ...f, businessShortCode: e.target.value }))} className="h-7 text-[10px]" placeholder="Required for Till" />
+                          </div>
+                          <div>
+                            <Label className="text-[9px]">Till Number</Label>
+                            <Input value={mpesaOverrides.partyB} onChange={e => setMpesaOverrides(f => ({ ...f, partyB: e.target.value }))} className="h-7 text-[10px]" placeholder="Required for Till" />
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2">
-                        <Input value={mpesaCode} onChange={e => setMpesaCode(e.target.value.toUpperCase())} className="h-9 text-sm uppercase font-mono flex-1" placeholder="Code (optional if cash only)" />
-                        <Button type="button" onClick={() => handleMpesaStkPush(paymentMode === 'lipa' ? (instalmentConfig.deposit || '0') : pForm.selling_price, pForm.customer_phone, 'product')}
-                          disabled={isMpesaProcessing || !pForm.customer_phone}
+                        <Input value={mpesaCode} onChange={e => setMpesaCode(e.target.value.toUpperCase())} className={cn("h-9 text-sm uppercase font-mono flex-1", pollStatus === 'confirmed' && "border-success bg-success/5")} placeholder="Auto-filled after STK push" readOnly={isPollActive || pollStatus === 'confirmed'} />
+                        <Button type="button" onClick={() => handleMpesaStkPush(paymentMode === 'lipa' ? (instalmentConfig.deposit || '0') : pForm.selling_price, pForm.customer_phone, 'product', mpesaOverrides)}
+                          disabled={isMpesaProcessing || isPollActive || !pForm.customer_phone}
                           className="h-9 bg-success hover:bg-success/90 text-xs gap-1 shrink-0">
-                          {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                          {isMpesaProcessing || isPollActive ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
                           STK
                         </Button>
                       </div>
+                      <MpesaPollStatusBadge />
                     </div>
                     {(cashAmount || mpesaAmount) && pForm.selling_price && (
                       <div className="flex justify-between items-center text-xs px-1">
@@ -823,16 +884,36 @@ const SalesDashboard = () => {
                       </div>
                     </div>
                     <div className="bg-accent/30 p-3 rounded-lg space-y-2">
-                      <Label className="text-[10px]">M-Pesa Reference</Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px]">M-Pesa Reference</Label>
+                        <button type="button" onClick={() => setShowAdvancedMpesa(!showAdvancedMpesa)} className="text-[9px] text-primary hover:underline">
+                          {showAdvancedMpesa ? 'Hide Settings' : 'Till Configuration'}
+                        </button>
+                      </div>
+
+                      {showAdvancedMpesa && (
+                        <div className="grid grid-cols-2 gap-2 pb-2 border-b border-border/50 mb-2">
+                          <div>
+                            <Label className="text-[9px]">Store Number</Label>
+                            <Input value={mpesaOverrides.businessShortCode} onChange={e => setMpesaOverrides(f => ({ ...f, businessShortCode: e.target.value }))} className="h-7 text-[10px]" placeholder="Required for Till" />
+                          </div>
+                          <div>
+                            <Label className="text-[9px]">Till Number</Label>
+                            <Input value={mpesaOverrides.partyB} onChange={e => setMpesaOverrides(f => ({ ...f, partyB: e.target.value }))} className="h-7 text-[10px]" placeholder="Required for Till" />
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2">
-                        <Input value={mpesaCode} onChange={e => setMpesaCode(e.target.value.toUpperCase())} className="h-9 text-sm uppercase font-mono flex-1" placeholder="Code (optional if cash only)" />
-                        <Button type="button" onClick={() => handleMpesaStkPush(sForm.amount, sForm.customer_phone, 'service')}
-                          disabled={isMpesaProcessing || !sForm.customer_phone}
+                        <Input value={mpesaCode} onChange={e => setMpesaCode(e.target.value.toUpperCase())} className={cn("h-9 text-sm uppercase font-mono flex-1", pollStatus === 'confirmed' && "border-success bg-success/5")} placeholder="Auto-filled after STK push" readOnly={isPollActive || pollStatus === 'confirmed'} />
+                        <Button type="button" onClick={() => handleMpesaStkPush(sForm.amount, sForm.customer_phone, 'service', mpesaOverrides)}
+                          disabled={isMpesaProcessing || isPollActive || !sForm.customer_phone}
                           className="h-9 bg-success hover:bg-success/90 text-xs gap-1 shrink-0">
-                          {isMpesaProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                          {isMpesaProcessing || isPollActive ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
                           STK
                         </Button>
                       </div>
+                      <MpesaPollStatusBadge />
                     </div>
                     {(cashAmount || mpesaAmount) && sForm.amount && (
                       <div className="flex justify-between items-center text-xs px-1">

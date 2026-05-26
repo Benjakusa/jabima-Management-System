@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  LayoutDashboard, Users, Package, Factory, ShoppingCart, 
+import {
+  LayoutDashboard, Users, Package, Factory, ShoppingCart,
   Wallet, FileText, Settings, LogOut, Menu, X, Receipt, ClipboardList,
   Tags, Layers, Store, Truck, GitBranch, UserCog
 } from 'lucide-react';
@@ -24,7 +24,6 @@ const adminNavItems: NavItem[] = [
   { label: 'Wallet', icon: <Wallet className="h-5 w-5" />, id: 'wallet' },
   { label: 'Products', icon: <Tags className="h-5 w-5" />, id: 'products' },
   { label: 'Materials', icon: <Layers className="h-5 w-5" />, id: 'materials' },
-  { label: 'Workers', icon: <Users className="h-5 w-5" />, id: 'workers' },
   { label: 'Shop Items', icon: <Store className="h-5 w-5" />, id: 'shop-items' },
   { label: 'Transfers', icon: <Truck className="h-5 w-5" />, id: 'transfers' },
   { label: 'Branches', icon: <GitBranch className="h-5 w-5" />, id: 'branches' },

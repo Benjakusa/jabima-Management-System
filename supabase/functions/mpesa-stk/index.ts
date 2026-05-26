@@ -16,14 +16,16 @@ function base64Encode(str: string): string {
 async function getAccessToken(consumerKey: string, consumerSecret: string, baseUrl: string): Promise<string> {
   const auth = base64Encode(`${consumerKey}:${consumerSecret}`);
 
+  console.log(`Getting access token from ${baseUrl}/oauth/v1/generate`);
   const response = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+    method: "GET",
     headers: {
       "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/json",
     },
   });
 
   const text = await response.text();
+  console.log(`Auth response status: ${response.status}, body: ${text}`);
   if (!response.ok) {
     throw new Error(`Auth fail: ${response.status} - ${text}`);
   }
@@ -71,16 +73,33 @@ serve(async (req) => {
   }
 
   try {
-    const CONSUMER_KEY = "WQgxiuwiAxhKTrGhn6QIKSxjnjqa3AROBqwTKpB0guYjUbEG";
-    const CONSUMER_SECRET = "GpmOG0jqS8CgWl5UY3mWtNNWHJO8UGBcuA3jy9gF8ySX2Q1YouubJt9ph2ABX7FX";
-    const SHORT_CODE = "174379";
-    const PASSKEY = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
-    const MPESA_CALLBACK_URL = "https://zuyiebfkrjbwwrbdcoxd.supabase.co/functions/v1/mpesa-callback";
+    const CONSUMER_KEY = Deno.env.get("MPESA_CONSUMER_KEY") || "fbR3RgKFX3GhVBOmyU3YAqR6vEgH4xCjt1gHSCD5YGo0SEIU";
+    const CONSUMER_SECRET = Deno.env.get("MPESA_CONSUMER_SECRET") || "PIbYE2ZQAM2XfQeRsSxxbccIgYKDB6HzdlgkMCczYTLAZo1LW47KkFFdAucWMUxb";
+    const SHORT_CODE = Deno.env.get("MPESA_SHORT_CODE") || "5715072";
+    // For CustomerBuyGoodsOnline: BusinessShortCode = Store Number, PartyB = Till Number
+    const STORE_NUMBER = Deno.env.get("MPESA_STORE_NUMBER") || "5715074";
+    const TILL_NUMBER = Deno.env.get("MPESA_TILL_NUMBER") || "3243763";
+    const PASSKEY = Deno.env.get("MPESA_PASSKEY") || "140319868dea856bcf4c822389fa08141f4882d313718bc795cadebd69d15ba1";
+    const MPESA_CALLBACK_URL = Deno.env.get("MPESA_CALLBACK_URL") || "https://zuyiebfkrjbwwrbdcoxd.supabase.co/functions/v1/payment-callback";
+    const BASE_URL = Deno.env.get("MPESA_BASE_URL") || "https://api.safaricom.co.ke";
 
-    const BASE_URL = "https://sandbox.safaricom.co.ke";
+    if (!CONSUMER_KEY || !CONSUMER_SECRET || !SHORT_CODE || !PASSKEY) {
+      return new Response(
+        JSON.stringify({ error: "M-Pesa credentials not configured. Set MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORT_CODE, and MPESA_PASSKEY in Supabase Edge Function secrets." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const body = await req.json();
-    const { phone, amount, accountReference = "JABIMA", transactionDesc = "Payment" } = body;
+    const {
+      phone,
+      amount,
+      accountReference = "JABIMA",
+      transactionDesc = "Payment",
+      transactionType = "CustomerPayBillOnline",
+      businessShortCode: businessShortCodeOverride,
+      partyB: partyBOverride
+    } = body;
 
     if (!phone || !amount) {
       return new Response(
@@ -92,23 +111,40 @@ serve(async (req) => {
     const normalizedPhone = normalizePhone(String(phone));
     const amountInt = Math.ceil(parseFloat(String(amount)));
 
+    console.log(`Processing STK Push for ${normalizedPhone}, amount: ${amountInt}, type: ${transactionType}`);
+
     const accessToken = await getAccessToken(CONSUMER_KEY, CONSUMER_SECRET, BASE_URL);
     const timestamp = getTimestamp();
-    const password = getSTKPassword(SHORT_CODE, PASSKEY, timestamp);
+
+    // For Buy Goods (CustomerBuyGoodsOnline):
+    //   BusinessShortCode = SHORT_CODE (the Lipa Na M-Pesa shortcode the passkey is tied to)
+    //   PartyB = Till Number (the specific till where money is collected)
+    //   Password = base64(SHORT_CODE + Passkey + Timestamp)
+    // For Paybill (CustomerPayBillOnline):
+    //   BusinessShortCode = SHORT_CODE, PartyB = SHORT_CODE
+    const isBuyGoods = transactionType === 'CustomerBuyGoodsOnline';
+    const effectiveBusinessShortCode = businessShortCodeOverride || SHORT_CODE;
+    const effectivePartyB = partyBOverride || (isBuyGoods ? TILL_NUMBER : SHORT_CODE);
+
+    const password = getSTKPassword(effectiveBusinessShortCode, PASSKEY, timestamp);
 
     const stkPayload = {
-      BusinessShortCode: SHORT_CODE,
+      BusinessShortCode: effectiveBusinessShortCode,
       Password: password,
       Timestamp: timestamp,
-      TransactionType: "CustomerPayBillOnline",
+      TransactionType: transactionType,
       Amount: amountInt,
       PartyA: normalizedPhone,
-      PartyB: SHORT_CODE,
+      PartyB: effectivePartyB,
       PhoneNumber: normalizedPhone,
       CallBackURL: MPESA_CALLBACK_URL,
       AccountReference: accountReference,
       TransactionDesc: transactionDesc,
     };
+
+    console.log(`STK Config — BusinessShortCode: ${effectiveBusinessShortCode}, PartyB: ${effectivePartyB}, Type: ${transactionType}`);
+
+    console.log("STK Payload sent to Safaricom:", JSON.stringify(stkPayload));
 
     const stkResponse = await fetch(`${BASE_URL}/mpesa/stkpush/v1/processrequest`, {
       method: "POST",
@@ -119,10 +155,11 @@ serve(async (req) => {
       body: JSON.stringify(stkPayload),
     });
 
-    console.log("STK Payload sent:", JSON.stringify(stkPayload));
-
     const stkText = await stkResponse.text();
+    console.log("Safaricom raw response:", stkText);
+
     if (!stkResponse.ok) {
+      console.error(`Safaricom Error: ${stkResponse.status}`, stkText);
       return new Response(
         JSON.stringify({ error: `STK Push Failed: ${stkResponse.status}`, details: stkText }),
         { status: stkResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -156,11 +193,12 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("mpesa-stk error:", err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("mpesa-stk error:", errMsg);
     return new Response(
       JSON.stringify({
         error: "Internal Server Error",
-        message: err instanceof Error ? err.message : String(err)
+        message: errMsg,
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

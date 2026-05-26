@@ -13,17 +13,15 @@ import DailyReportReminder from './DailyReportReminder';
 import ProductionManagement from '@/components/production/ProductionManagement';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'tasks' | 'requests' | 'returns' | 'wallet' | 'report' | 'stages' | 'production';
+type Tab = 'overview' | 'requests' | 'returns' | 'production' | 'wallet' | 'report';
 
-const tabs: { id: Tab; label: string; icon: typeof Factory }[] = [
-  { id: 'overview', label: 'Home', icon: LayoutDashboard },
-  { id: 'tasks', label: 'Tasks', icon: Factory },
+const tabs: { id: Tab; label: string; icon: any }[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'requests', label: 'Materials', icon: Package },
   { id: 'returns', label: 'Returns', icon: RotateCcw },
   { id: 'production', label: 'Production', icon: Factory },
-  { id: 'stages', label: 'My Stages', icon: Settings },
   { id: 'wallet', label: 'Wallet', icon: Wallet },
-  { id: 'report', label: 'Report', icon: FileText },
+  { id: 'report', label: 'Reports', icon: FileText },
 ];
 
 const WorkerDashboard = () => {
@@ -52,13 +50,11 @@ const WorkerDashboard = () => {
       {/* Main content - responsive container */}
       <div className="p-3 lg:p-6 mx-auto max-w-5xl space-y-4 lg:space-y-6">
         <DailyReportReminder />
-        
+
         {activeTab === 'overview' && <WorkshopOverview />}
-        {activeTab === 'tasks' && <WorkshopTasks />}
         {activeTab === 'requests' && <WorkshopMaterialRequests />}
         {activeTab === 'returns' && <WorkshopMaterialReturns />}
         {activeTab === 'production' && <ProductionManagement />}
-        {activeTab === 'stages' && <MyStageSelection />}
         {activeTab === 'wallet' && <WorkshopWallet />}
         {activeTab === 'report' && <DailyReportForm />}
       </div>

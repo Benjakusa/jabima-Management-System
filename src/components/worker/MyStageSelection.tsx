@@ -105,8 +105,8 @@ const MyStageSelection = () => {
           const rateOverride = getRateOverride(stage.value);
 
           return (
-            <Card 
-              key={stage.value} 
+            <Card
+              key={stage.value}
               className={cn(
                 "border cursor-pointer transition-all",
                 isAssigned ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20" : "hover:border-primary/30"

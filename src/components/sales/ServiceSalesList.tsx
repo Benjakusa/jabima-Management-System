@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X, Loader2, Search, Briefcase, Receipt } from 'lucide-react';
+import { Plus, X, Loader2, Search, Briefcase, Receipt, TrendingUp, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { useMpesaPoll } from '@/hooks/useMpesaPoll';
+import { cn } from '@/lib/utils';
 
 interface ServiceForm {
   service_name: string;
@@ -37,6 +39,69 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // M-Pesa polling for auto-populating receipt number
+  const { mpesaReceiptNumber, pollStatus, isPollActive, startPolling, stopPolling } = useMpesaPoll();
+  const [isMpesaProcessing, setIsMpesaProcessing] = useState(false);
+
+  // Auto-populate mpesaCode when receipt number is fetched
+  useEffect(() => {
+    if (mpesaReceiptNumber && pollStatus === 'confirmed') {
+      setForm(f => ({ ...f, mpesa_code: mpesaReceiptNumber }));
+    }
+  }, [mpesaReceiptNumber, pollStatus]);
+
+  const handleMpesaStkPush = async () => {
+    const amount = form.amount;
+    const phone = form.customer_phone;
+
+    if (!phone) { toast({ variant: 'destructive', title: 'Customer phone required' }); return; }
+    if (!amount || parseFloat(amount) <= 0) { toast({ variant: 'destructive', title: 'Valid amount required' }); return; }
+    if (!form.customer_name) { toast({ variant: 'destructive', title: 'Customer name required' }); return; }
+
+    setIsMpesaProcessing(true);
+    toast({ title: 'Sending STK Push...', description: `Check phone ${phone}` });
+
+    try {
+      const invokeResult = await supabase.functions.invoke('mpesa-stk', {
+        body: {
+          phone,
+          amount,
+          accountReference: 'JABIMA',
+          transactionDesc: 'Service Payment',
+          transactionType: 'CustomerBuyGoodsOnline'
+        },
+      }) as any;
+      const { data, error } = invokeResult;
+
+      if (error) {
+        let bodyError = error.message;
+        try {
+          const errContext = await (error as any).context?.json?.();
+          bodyError = errContext?.message || errContext?.error || error.message;
+        } catch (_) { }
+        throw new Error(bodyError || `Edge Function error`);
+      }
+
+      if (data?.ResponseCode === "0") {
+        startPolling(data.CheckoutRequestID);
+        toast({
+          title: 'STK Push Sent! ✅',
+          description: `Check your phone ${phone} for payment prompt. Waiting for confirmation...`
+        });
+      } else if (data?.error) {
+        throw new Error(data.details || data.error);
+      } else {
+        throw new Error(data?.ResponseDescription || data?.message || `Safaricom error code: ${data?.ResponseCode}`);
+      }
+    } catch (err: any) {
+      console.error('M-Pesa Error:', err);
+      const errorMsg = err?.data?.message || err?.data?.details || err?.data?.error || err?.message || err?.toString() || 'Unknown error';
+      toast({ variant: 'destructive', title: 'M-Pesa Error', description: errorMsg });
+    } finally {
+      setIsMpesaProcessing(false);
+    }
+  };
 
   const { data: sales, isLoading } = useQuery({
     queryKey: ['service-sales'],
@@ -93,6 +158,7 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
       toast({ title: 'Service sale recorded!' });
       setShowForm(false);
       setForm(emptyForm);
+      stopPolling();
       queryClient.invalidateQueries({ queryKey: ['service-sales'] });
       queryClient.invalidateQueries({ queryKey: ['service-sales-month'] });
       if (data) onViewReceipt(data.id);
@@ -105,8 +171,37 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
   const filtered = (sales || []).filter(s =>
     s.customer_name.toLowerCase().includes(search.toLowerCase()) ||
     s.service_name.toLowerCase().includes(search.toLowerCase()) ||
-    s.mpesa_code.toLowerCase().includes(search.toLowerCase())
+    (s.mpesa_code && s.mpesa_code.toLowerCase().includes(search.toLowerCase()))
   );
+
+  // M-Pesa poll status indicator component
+  const MpesaPollStatusBadge = () => {
+    if (pollStatus === 'polling') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-primary animate-pulse">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Waiting for M-Pesa confirmation...</span>
+      </div>
+    );
+    if (pollStatus === 'confirmed') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-success">
+        <CheckCircle2 className="h-3 w-3" />
+        <span>Payment confirmed: {mpesaReceiptNumber}</span>
+      </div>
+    );
+    if (pollStatus === 'failed') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-destructive">
+        <XCircle className="h-3 w-3" />
+        <span>Payment failed — enter code manually</span>
+      </div>
+    );
+    if (pollStatus === 'timeout') return (
+      <div className="flex items-center gap-1.5 text-[10px] text-warning">
+        <AlertTriangle className="h-3 w-3" />
+        <span>Timed out — enter code manually</span>
+      </div>
+    );
+    return null;
+  };
 
   const getName = (id: string) => profiles?.find(p => p.user_id === id)?.full_name || 'Unknown';
   const fmt = (v: number) => `Ksh ${v.toLocaleString()}`;
@@ -134,7 +229,7 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
               <div className="space-y-2">
                 <Label>Service Type *</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(serviceTypes || []).map(s => (
+                  {(serviceTypes || []).map((s: any) => (
                     <button key={s.name} type="button"
                       onClick={() => setForm(f => ({ ...f, service_name: s.name, amount: String(s.base_price || '') }))}
                       className={`px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors text-center ${form.service_name === s.name ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
@@ -164,7 +259,16 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
                 </div>
                 <div className="space-y-2">
                   <Label>MPESA Transaction Code *</Label>
-                  <Input value={form.mpesa_code} onChange={(e) => setForm(f => ({ ...f, mpesa_code: e.target.value }))} placeholder="e.g. SHK7Y2X9RQ" className="h-12 uppercase" required />
+                  <div className="flex gap-2">
+                    <Input value={form.mpesa_code} onChange={(e) => setForm(f => ({ ...f, mpesa_code: e.target.value }))} placeholder="e.g. SHK7Y2X9RQ" className={cn("h-12 uppercase", pollStatus === 'confirmed' && "border-success bg-success/5")} required readOnly={isPollActive || pollStatus === 'confirmed'} />
+                    <Button type="button" onClick={handleMpesaStkPush}
+                      disabled={isMpesaProcessing || isPollActive || !form.customer_phone}
+                      className="h-12 bg-success hover:bg-success/90 shrink-0 px-3">
+                      {isMpesaProcessing || isPollActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                      STK Push
+                    </Button>
+                  </div>
+                  <MpesaPollStatusBadge />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Branch</Label>
@@ -177,7 +281,7 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
               </div>
 
               <Button type="submit" size="lg" className="w-full"
-                disabled={createMutation.isPending || !form.service_name || !form.customer_name || !form.amount || !form.mpesa_code}>
+                disabled={createMutation.isPending || isMpesaProcessing || isPollActive || !form.service_name || !form.customer_name || !form.amount || !form.mpesa_code}>
                 {createMutation.isPending ? <Loader2 className="animate-spin" /> : <Briefcase className="h-4 w-4" />}
                 Complete Service Sale & Generate Receipt
               </Button>

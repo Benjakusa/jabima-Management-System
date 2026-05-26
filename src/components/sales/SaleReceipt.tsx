@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Printer, Share2, Mail, MessageCircle, Download } from 'lucide-react';
+import { Mail, MessageCircle, FileDown } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -153,30 +153,16 @@ const formatReceiptText = () => {
     const blob = await generatePDFBlob();
     if (!blob) return;
 
-    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const file = new File([blob], fileName, { type: 'application/pdf' });
+    downloadPDF(blob);
 
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: `Sales Receipt - ${COMPANY.name}`,
-          text: `Receipt #${sale.id.slice(0, 8).toUpperCase()} from ${COMPANY.name}. Amount: Ksh ${(type === 'product' ? (sale as any).selling_price : (sale as any).amount).toLocaleString()}`,
-        });
-        return;
-      } catch (err: any) {
-        if (err.name !== 'AbortError') console.error('Share failed:', err);
-      }
-    }
-
-    const url = URL.createObjectURL(blob);
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(formatReceiptText())}`;
     const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
+    a.href = waUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const sharePDFViaEmail = async () => {
@@ -184,22 +170,19 @@ const formatReceiptText = () => {
     const blob = await generatePDFBlob();
     if (!blob) return;
 
+    downloadPDF(blob);
+
+    const subject = `Sales Receipt #${sale.id.slice(0, 8).toUpperCase()} - ${COMPANY.name}`;
+    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(formatReceiptText())}`;
+    window.location.href = mailtoUrl;
+  };
+
+  const downloadPDF = async (existingBlob?: Blob) => {
+    if (!sale) return;
+    const blob = existingBlob || await generatePDFBlob();
+    if (!blob) return;
+
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const file = new File([blob], fileName, { type: 'application/pdf' });
-
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: `Sales Receipt - ${COMPANY.name}`,
-          text: `Receipt #${sale.id.slice(0, 8).toUpperCase()} from ${COMPANY.name}. Amount: Ksh ${(type === 'product' ? (sale as any).selling_price : (sale as any).amount).toLocaleString()}`,
-        });
-        return;
-      } catch (err: any) {
-        if (err.name !== 'AbortError') console.error('Share failed:', err);
-      }
-    }
-
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -208,46 +191,6 @@ const formatReceiptText = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
-
-  const downloadPDF = () => {
-    const printContent = receiptRef.current;
-    if (!printContent || !sale) return;
-    
-    const win = window.open('', '_blank');
-    if (!win) return;
-    const size = printSize;
-    const winWidth = size === 'a4' ? '210mm' : '58mm';
-    const padding = size === 'a4' ? '15mm' : '2mm';
-    const fontSize = size === 'a4' ? '12px' : '9px';
-    
-    win.document.write(`
-      <!DOCTYPE html>
-      <html><head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Receipt - ${sale.id.slice(0, 8).toUpperCase()}</title>
-        <style>
-          @page { margin: 0; size: ${size === 'a4' ? 'A4' : '58mm auto'}; }
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Courier New', Courier, monospace; 
-            width: ${winWidth}; 
-            margin: 0 auto;
-            padding: ${padding}; 
-            font-size: ${fontSize}; 
-            line-height: 1.3;
-            background: white;
-          }
-          .total-amount { color: #16a34a !important; }
-          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        </style>
-      </head><body>${printContent.innerHTML}</body></html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-    }, 250);
   };
 
   if (isLoading || !sale) {
@@ -285,8 +228,8 @@ const formatReceiptText = () => {
           <option value="thermal">Thermal (58mm)</option>
           <option value="a4">A4 Paper</option>
         </select>
-        <Button onClick={downloadPDF} variant="outline" size="lg" className="flex-1">
-          <Printer className="h-4 w-4" />Print
+        <Button onClick={() => downloadPDF()} variant="outline" size="lg" className="flex-1">
+          <FileDown className="h-4 w-4" />Download
         </Button>
         <Button onClick={sharePDFViaWhatsApp} variant="outline" size="lg" className="flex-1">
           <MessageCircle className="h-4 w-4" />WhatsApp

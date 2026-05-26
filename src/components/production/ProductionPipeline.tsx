@@ -2,23 +2,17 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Scissors, Hammer, LayoutGrid, Wind, Palette, PaintBucket, 
-  Grip, GlassWater, Wrench, CheckCircle, User 
+import {
+  Scissors, Hammer, LayoutGrid, Wind, Palette, PaintBucket,
+  Grip, GlassWater, Wrench, CheckCircle, User
 } from 'lucide-react';
 import { ReactNode } from 'react';
 
 const STAGES: { value: string; label: string; icon: ReactNode; color: string }[] = [
-  { value: 'wood_cutting', label: 'Wood Cutting', icon: <Scissors className="h-4 w-4" />, color: 'bg-amber-500' },
-  { value: 'frame_assembly', label: 'Frame Assembly', icon: <Hammer className="h-4 w-4" />, color: 'bg-orange-500' },
-  { value: 'board_fitting', label: 'Board Fitting', icon: <LayoutGrid className="h-4 w-4" />, color: 'bg-yellow-500' },
-  { value: 'sanding', label: 'Sanding', icon: <Wind className="h-4 w-4" />, color: 'bg-lime-500' },
-  { value: 'fabric_lining', label: 'Fabric Lining', icon: <Palette className="h-4 w-4" />, color: 'bg-emerald-500' },
-  { value: 'painting', label: 'Painting', icon: <PaintBucket className="h-4 w-4" />, color: 'bg-cyan-500' },
-  { value: 'handle_installation', label: 'Handles', icon: <Grip className="h-4 w-4" />, color: 'bg-sky-500' },
-  { value: 'glass_installation', label: 'Glass', icon: <GlassWater className="h-4 w-4" />, color: 'bg-blue-500' },
-  { value: 'final_assembly', label: 'Final Assembly', icon: <Wrench className="h-4 w-4" />, color: 'bg-indigo-500' },
-  { value: 'quality_inspection', label: 'QC', icon: <CheckCircle className="h-4 w-4" />, color: 'bg-violet-500' },
+  { value: 'frame_body', label: 'Frame/Body', icon: <Hammer className="h-4 w-4" />, color: 'bg-amber-500' },
+  { value: 'sanding_paint', label: 'Sanding/Paint', icon: <PaintBucket className="h-4 w-4" />, color: 'bg-orange-500' },
+  { value: 'cloth_lining', label: 'Cloth/Lining', icon: <Palette className="h-4 w-4" />, color: 'bg-emerald-500' },
+  { value: 'glass_finish', label: 'Glass/Finish', icon: <CheckCircle className="h-4 w-4" />, color: 'bg-blue-500' },
 ];
 
 export { STAGES };

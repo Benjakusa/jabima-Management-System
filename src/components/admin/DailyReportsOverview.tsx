@@ -13,12 +13,33 @@ const DailyReportsOverview = () => {
   const { data: reports, isLoading } = useQuery({
     queryKey: ['admin-daily-reports', dateFilter],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('daily_reports')
-        .select('*')
-        .eq('report_date', dateFilter)
-        .order('created_at', { ascending: false });
-      return data || [];
+      // Fetch both regular and workshop reports
+      const [regularRes, workshopRes] = await Promise.all([
+        supabase
+          .from('daily_reports')
+          .select('*')
+          .eq('report_date', dateFilter),
+        supabase
+          .from('wp_daily_reports' as any)
+          .select('*')
+          .eq('report_date', dateFilter)
+      ]);
+
+      const regularReports = regularRes.data || [];
+      const workshopReports = (workshopRes.data || []).map((r: any) => ({
+        ...r,
+        user_id: r.officer_id, // Normalize to user_id
+        tasks_completed: r.tasks_completed || (r.tasks ? r.tasks.length : 0),
+        completed_tasks: (r.tasks || []).map((t: any) => ({
+          product: t.product_type || t.product || t.task_name || 'Production Task',
+          batch: t.batch_number || t.batch || 'N/A',
+          stage: t.stage_name || t.stage || t.task_name || 'Unknown'
+        }))
+      }));
+
+      return [...regularReports, ...workshopReports].sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
     },
   });
 

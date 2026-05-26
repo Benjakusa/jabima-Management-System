@@ -41,8 +41,21 @@ const WorkerProfileView = ({ user, branches }: Props) => {
   const { data: dailyReports } = useQuery({
     queryKey: ['worker-daily-reports', user.user_id],
     queryFn: async () => {
-      const { data } = await supabase.from('daily_reports').select('*').eq('user_id', user.user_id).order('report_date', { ascending: false }).limit(10);
-      return data || [];
+      const [regularRes, workshopRes] = await Promise.all([
+        supabase.from('daily_reports').select('*').eq('user_id', user.user_id).order('report_date', { ascending: false }).limit(10),
+        supabase.from('wp_daily_reports' as any).select('*').eq('officer_id', user.user_id).order('report_date', { ascending: false }).limit(10)
+      ]);
+
+      const regularReports = regularRes.data || [];
+      const workshopReports = (workshopRes.data || []).map((r: any) => ({
+        ...r,
+        user_id: r.officer_id,
+        tasks_completed: r.tasks_completed || (r.tasks ? r.tasks.length : 0),
+      }));
+
+      return [...regularReports, ...workshopReports].sort((a, b) =>
+        new Date(b.report_date).getTime() - new Date(a.report_date).getTime()
+      ).slice(0, 10);
     },
   });
 

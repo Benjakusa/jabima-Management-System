@@ -10,6 +10,7 @@ import ExpenseCharts from './ExpenseCharts';
 import ProfitMarginWidget from './ProfitMarginWidget';
 import StockByBranchPanel from './StockByBranchPanel';
 import InstalmentOverview from './InstalmentOverview';
+import WorkshopEmployerOverview from './WorkshopEmployerOverview';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
   DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper, Building2
@@ -152,6 +153,9 @@ const AdminDashboard = () => {
         <h3 className="font-display text-lg font-semibold text-foreground mb-3">Instalment Plans</h3>
         <InstalmentOverview />
       </div>
+
+      {/* Workshop Employer Overview */}
+      <WorkshopEmployerOverview />
 
       {/* Analytics Charts */}
       <div>

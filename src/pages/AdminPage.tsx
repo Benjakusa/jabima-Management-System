@@ -15,7 +15,6 @@ import ProductsDesignsPage from '@/components/admin/ProductsDesignsPage';
 import ShopItemsPage from '@/components/admin/ShopItemsPage';
 import InterbranchTransfersPage from '@/components/admin/InterbranchTransfersPage';
 import BranchManagementPage from '@/components/admin/BranchManagementPage';
-import WorkerStageAssignmentsPage from '@/components/admin/WorkerStageAssignmentsPage';
 
 const AdminPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -52,8 +51,6 @@ const AdminPage = () => {
         return <InterbranchTransfersPage />;
       case 'branches':
         return <BranchManagementPage />;
-      case 'workers':
-        return <WorkerStageAssignmentsPage />;
       default:
         return <AdminDashboard />;
     }

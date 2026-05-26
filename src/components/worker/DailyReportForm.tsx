@@ -1,235 +1,175 @@
-import { useState, useMemo } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent } from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { FileText, CheckCircle, Loader2, Calendar, Play, Pause, Check } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Loader2, Lock, ListTodo } from 'lucide-react';
+import { format, startOfDay, endOfDay } from 'date-fns';
+import { Badge } from '@/components/ui/badge';
 
 const DailyReportForm = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [summary, setSummary] = useState('');
+  const { toast } = useToast();
+  const today = new Date();
 
-  const today = new Date().toISOString().split('T')[0];
-  const todayStart = `${today}T00:00:00`;
-  const todayEnd = `${today}T23:59:59`;
-
-  const { data: todayReport } = useQuery({
-    queryKey: ['daily-report-today', user?.id, today],
+  // Fetch Submitted Report
+  const { data: report, isLoading: loadingReport } = useQuery({
+    queryKey: ['wp_daily_reports', user?.id, format(today, 'yyyy-MM-dd')],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('daily_reports')
+      const { data, error } = await supabase
+        .from('wp_daily_reports')
         .select('*')
-        .eq('user_id', user!.id)
-        .eq('report_date', today)
+        .eq('officer_id', user?.id)
+        .eq('report_date', format(today, 'yyyy-MM-dd'))
         .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
       return data;
     },
-    enabled: !!user,
   });
 
-  const { data: todayTasks } = useQuery({
-    queryKey: ['stage-logs-today', user?.id, today],
+  // Fetch Today's Completed Tasks
+  const { data: tasks, isLoading: loadingTasks } = useQuery({
+    queryKey: ['wp_daily_tasks', user?.id],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('stage_logs')
-        .select(`
-          *,
-          production_orders (
-            batch_number,
-            products (
-              name
-            )
-          )
-        `)
-        .eq('worker_id', user!.id)
-        .gte('started_at', todayStart)
-        .lte('started_at', todayEnd)
-        .order('started_at', { ascending: false });
-      return data || [];
-    },
-    enabled: !!user,
-  });
+      const start = startOfDay(today).toISOString();
+      const end = endOfDay(today).toISOString();
 
-  const taskCounts = useMemo(() => {
-    if (!todayTasks) return { started: 0, midway: 0, completed: 0 };
-    return {
-      started: todayTasks.filter(t => t.work_status === 'started').length,
-      midway: todayTasks.filter(t => t.work_status === 'midway').length,
-      completed: todayTasks.filter(t => t.work_status === 'completed').length,
-    };
-  }, [todayTasks]);
-
-  const { data: recentReports } = useQuery({
-    queryKey: ['daily-reports-recent', user?.id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('daily_reports')
+      const { data, error } = await supabase
+        .from('wp_production_tasks')
         .select('*')
-        .eq('user_id', user!.id)
-        .order('report_date', { ascending: false })
-        .limit(7);
+        .eq('assigned_officer_id', user?.id)
+        .eq('status', 'Completed')
+        .gte('completed_at', start)
+        .lte('completed_at', end);
+
+      if (error) throw error;
       return data || [];
     },
-    enabled: !!user,
+    enabled: !report, // Only fetch dynamically if no submitted report
   });
 
-  const submitMutation = useMutation({
+  const submitReportMutation = useMutation({
     mutationFn: async () => {
-      const completedTasks = todayTasks?.filter(t => t.work_status === 'completed') || [];
-      const totalTasks = completedTasks.length;
-      const trimmedSummary = summary.trim();
-      if (!trimmedSummary) throw new Error('Please enter a summary');
-
-      const tasksDetail = completedTasks.map(t => ({
-        id: t.id,
-        product: t.production_orders?.products?.name,
-        batch: t.production_orders?.batch_number,
-        stage: t.stage,
-        completed_at: t.completed_at || new Date().toISOString(),
-      }));
-
-      const { error } = await supabase.from('daily_reports').insert({
-        user_id: user!.id,
-        tasks_completed: totalTasks,
-        summary: trimmedSummary.slice(0, 1000),
-        report_date: today,
-        completed_tasks: tasksDetail,
+      const { error } = await supabase.from('wp_daily_reports').insert({
+        officer_id: user?.id,
+        report_date: format(today, 'yyyy-MM-dd'),
+        tasks: tasks,
+        is_locked: true,
+        submitted_at: new Date().toISOString()
       });
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: 'Report submitted!' });
-      setSummary('');
-      queryClient.invalidateQueries({ queryKey: ['daily-report-today'] });
-      queryClient.invalidateQueries({ queryKey: ['daily-reports-recent'] });
+      toast({ title: 'Daily Report Submitted', description: 'Your day works have been logged.' });
+      queryClient.invalidateQueries({ queryKey: ['wp_daily_reports'] });
     },
-    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
+    onError: (err) => toast({ variant: 'destructive', title: 'Error', description: err.message })
   });
 
-  const statusConfig = {
-    started: { icon: Play, color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Started' },
-    midway: { icon: Pause, color: 'text-amber-500', bg: 'bg-amber-500/10', label: 'Midway' },
-    completed: { icon: Check, color: 'text-green-500', bg: 'bg-green-500/10', label: 'Completed' },
-  };
+  if (loadingTasks || loadingReport) {
+    return <div className="flex justify-center p-10"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
+  }
+
+  const displayTasks = report ? report.tasks : (tasks || []);
+  const distinctOrdersCount = new Set(displayTasks.map((t: any) => t.order_id)).size;
+  // Calculate fully completed orders today logically (using derived logic since order completion time is tricky to fetch here without extra queries)
+  const completedOrdersCount = displayTasks.filter((t: any) => t.production_orders?.status === 'completed').length;
 
   return (
-    <div className="space-y-4">
-      <h2 className="font-display font-semibold text-foreground text-sm flex items-center gap-2">
-        <FileText className="h-4 w-4 text-primary" /> Daily Report
-      </h2>
+    <div className="space-y-6">
+      <div>
+        <h2 className="font-display text-xl font-bold text-foreground">Daily Report</h2>
+        <p className="text-sm text-muted-foreground">{format(today, 'PPPP')}</p>
+      </div>
 
-      {todayReport ? (
-        <Card className="border border-success/30 bg-success/5">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="h-4 w-4 text-success" />
-              <span className="text-sm font-medium text-foreground">Today's report submitted</span>
-            </div>
-            <p className="text-xs text-muted-foreground">Tasks: {todayReport.tasks_completed}</p>
-            {todayReport.completed_tasks && todayReport.completed_tasks.length > 0 && (
-              <div className="mt-2 space-y-1">
-                <p className="text-[10px] text-muted-foreground">Completed:</p>
-                {todayReport.completed_tasks.map((task: any, i: number) => (
-                  <div key={i} className="flex items-center gap-2 py-1 px-2 rounded bg-accent/20 text-xs">
-                    <Check className="h-3 w-3 text-green-500" />
-                    <span>{task.product}</span>
-                    <Badge variant="outline" className="text-[10px]">{task.batch}</Badge>
-                    <span className="text-muted-foreground text-[10px]">{task.stage}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-2">{todayReport.summary}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <ListTodo className="h-6 w-6 text-primary mb-2" />
+            <h4 className="text-2xl font-bold">{displayTasks.length}</h4>
+            <p className="text-xs text-muted-foreground">Tasks Completed</p>
           </CardContent>
         </Card>
-      ) : (
-        <Card className="border">
-          <CardContent className="p-4 space-y-3">
-            {todayTasks && todayTasks.length > 0 && (
-              <div>
-                <Label className="text-xs text-muted-foreground">Today's Tasks</Label>
-                <div className="flex gap-2 mt-1 mb-2">
-                  {(['started', 'midway', 'completed'] as const).map(status => {
-                    const config = statusConfig[status];
-                    const Icon = config.icon;
-                    return (
-                      <div key={status} className={`flex items-center gap-1 px-2 py-1 rounded ${config.bg}`}>
-                        <Icon className={`h-3 w-3 ${config.color}`} />
-                        <span className="text-xs font-medium">{taskCounts[status]}</span>
-                        <span className="text-[10px] text-muted-foreground">{config.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div>
-              <Label className="text-xs text-muted-foreground">Tasks Completed (auto-populated)</Label>
-              <div className="mt-1 space-y-1 max-h-[100px] overflow-y-auto rounded-md border bg-accent/20">
-                {todayTasks?.filter(t => t.work_status === 'completed').length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">No completed tasks yet</div>
-                ) : (
-                  todayTasks?.filter(t => t.work_status === 'completed').map(task => (
-                    <div key={task.id} className="flex items-center gap-2 px-3 py-1 text-xs">
-                      <Check className="h-3 w-3 text-green-500" />
-                      <span>{task.production_orders?.products?.name}</span>
-                      <Badge variant="outline" className="text-[10px]">{task.production_orders?.batch_number}</Badge>
-                      <Badge variant="secondary" className="text-[10px]">{task.stage}</Badge>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs">Summary</Label>
-              <Textarea
-                placeholder="What did you work on today?"
-                value={summary}
-                onChange={e => setSummary(e.target.value)}
-                maxLength={1000}
-                className="mt-1 min-h-[60px]"
-              />
-            </div>
-            <Button
-              size="sm"
-              className="w-full"
-              onClick={() => submitMutation.mutate()}
-              disabled={submitMutation.isPending || !summary.trim()}
-            >
-              {submitMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
-              Submit Report
-            </Button>
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <Factory className="h-6 w-6 text-primary mb-2" />
+            <h4 className="text-2xl font-bold">{distinctOrdersCount}</h4>
+            <p className="text-xs text-muted-foreground">Orders Progressed</p>
           </CardContent>
         </Card>
-      )}
+        <Card className="bg-success/5 border-success/20">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <CheckCircle className="h-6 w-6 text-success mb-2" />
+            <h4 className="text-2xl font-bold">{completedOrdersCount}</h4>
+            <p className="text-xs text-muted-foreground">Orders Fully Finished</p>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Recent reports */}
-      {recentReports && recentReports.length > 0 && (
-        <div>
-          <h3 className="text-xs font-medium text-muted-foreground mb-2">Recent Reports</h3>
-          <div className="space-y-1">
-            {recentReports.filter(r => r.report_date !== today).slice(0, 5).map(r => (
-              <div key={r.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/30 text-sm">
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-foreground text-xs">{new Date(r.report_date).toLocaleDateString()}</span>
-                  <Badge variant="secondary" className="text-[10px]">{r.tasks_completed} tasks</Badge>
-                </div>
-              </div>
-            ))}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">Today's Activity Log</CardTitle>
+              <CardDescription>Auto-generated from your completed workshop tasks.</CardDescription>
+            </div>
+            {report && <Badge variant="secondary" className="bg-success/10 text-success"><Lock className="h-3 w-3 mr-1" /> Submitted</Badge>}
           </div>
-        </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {displayTasks.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">
+              <FileText className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p>No tasks completed today.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {displayTasks.map((task: any, index: number) => (
+                <div key={task.id || index} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                        {task.order_id?.slice(0, 8).toUpperCase()}
+                      </Badge>
+                      <span className="font-medium text-sm">
+                        {task.product_type || 'Production Task'}
+                      </span>
+                    </div>
+                    <p className="text-foreground text-sm font-semibold">{task.task_name}</p>
+                    <p className="text-xs text-muted-foreground">{task.stage_name || 'Workshop Stage'}</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+                    <Clock className="h-3 w-3" />
+                    {task.started_at && <>{format(new Date(task.started_at), 'HH:mm')} - </>}
+                    {task.completed_at ? format(new Date(task.completed_at), 'HH:mm') : 'Done'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {!report && displayTasks.length > 0 && (
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={() => submitReportMutation.mutate()}
+          disabled={submitReportMutation.isPending}
+        >
+          {submitReportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+          Submit & Lock Today's Report
+        </Button>
       )}
     </div>
   );
 };
+
+// Extracted Factory icon to prevent compilation errors if it wasn't imported
+import { Factory } from 'lucide-react';
 
 export default DailyReportForm;
