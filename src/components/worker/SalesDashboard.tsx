@@ -362,19 +362,6 @@ const SalesDashboard = () => {
       } as any).select().single();
       if (error) throw error;
 
-      // Record split payment transactions
-      const paymentTxns: any[] = [];
-      if (parseFloat(cashAmount) > 0) {
-        paymentTxns.push({ sale_id: data.id, amount: parseFloat(cashAmount), payment_method: 'cash', reference_number: `CASH-${Date.now().toString().slice(-6)}`, recorded_by: user?.id });
-      }
-      if (parseFloat(mpesaAmount) > 0) {
-        paymentTxns.push({ sale_id: data.id, amount: parseFloat(mpesaAmount), payment_method: 'mpesa', reference_number: mpesaCode.trim() || `MPESA-${Date.now().toString().slice(-6)}`, recorded_by: user?.id });
-      }
-      if (paymentTxns.length > 0) {
-        const { error: txnErr } = await supabase.from('payment_transactions' as any).insert(paymentTxns);
-        if (txnErr) throw txnErr;
-      }
-
       return data;
     },
     onSuccess: (data) => {

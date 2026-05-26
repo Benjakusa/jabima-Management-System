@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw, ArrowLeftRight } from 'lucide-react';
+import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw, ArrowLeftRight, Factory } from 'lucide-react';
 import InventoryOverview from './InventoryOverview';
 import RawMaterialsList from './RawMaterialsList';
 import SuppliersList from './SuppliersList';
@@ -17,14 +17,16 @@ import FinishedProductsList from './FinishedProductsList';
 import ProductRequestProcessing from './ProductRequestProcessing';
 import ProductReturnProcessing from './ProductReturnProcessing';
 import InterbranchTransfersPage from '@/components/admin/InterbranchTransfersPage';
+import ProductionManagement from '@/components/production/ProductionManagement';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'materials' | 'finished' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'transfers' | 'wallet' | 'report';
+type Tab = 'overview' | 'materials' | 'finished' | 'suppliers' | 'alerts' | 'requests' | 'product_requests' | 'returns' | 'product_returns' | 'transfers' | 'production' | 'wallet' | 'report';
 
 const tabs: { id: Tab; label: string; icon: typeof Package }[] = [
   { id: 'overview', label: 'Home', icon: LayoutDashboard },
   { id: 'materials', label: 'Materials', icon: Package },
   { id: 'finished', label: 'Finished', icon: Package },
+  { id: 'production', label: 'Production', icon: Factory },
   { id: 'requests', label: 'Material Req', icon: ClipboardList },
   { id: 'returns', label: 'Material Ret', icon: RotateCcw },
 ];
@@ -137,6 +139,7 @@ const InventoryOfficerDashboard = () => {
             <InterbranchTransfersPage />
           </div>
         )}
+        {activeTab === 'production' && <ProductionManagement />}
         {activeTab === 'wallet' && <WorkshopWallet />}
         {activeTab === 'report' && <DailyReportForm />}
       </div>

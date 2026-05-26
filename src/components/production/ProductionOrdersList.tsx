@@ -185,23 +185,26 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
           <CardContent>
             <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-4">
               <div className="space-y-2">
-                <Label>Product Type</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {productTypes.map(type => (
-                    <button key={type} type="button" onClick={() => setProductType(type)}
-                      className={cn("px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors text-center",
-                        productType === type ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
+                <Label>Product Type *</Label>
+                <Input value={productType === 'Custom Order' ? customType : productType}
+                  onChange={(e) => { setProductType('Custom Order'); setCustomType(e.target.value); }}
+                  placeholder="Type product type name..."
+                  className="h-12" list="product-type-suggestions" />
+                <datalist id="product-type-suggestions">
+                  {productTypes.filter(t => t !== 'Custom Order').map(type => (
+                    <option key={type} value={type} />
+                  ))}
+                </datalist>
+                <p className="text-[10px] text-muted-foreground">Type a name or pick from suggestions below</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {productTypes.filter(t => t !== 'Custom Order').map(type => (
+                    <button key={type} type="button" onClick={() => { setProductType(type); setCustomType(''); }}
+                      className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors",
+                        productType === type && !customType ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
                       )}>{type}</button>
                   ))}
                 </div>
               </div>
-
-              {productType === 'Custom Order' && (
-                <div className="space-y-2">
-                  <Label>Custom Type Name</Label>
-                  <Input value={customType} onChange={(e) => setCustomType(e.target.value)} placeholder="Describe the custom product" required />
-                </div>
-              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="space-y-2">

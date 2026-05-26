@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import ProductionQueue from '@/components/production/ProductionQueue';
+import ProductionOrdersList from '@/components/production/ProductionOrdersList';
 import ProductionOrderDetail from '@/components/production/ProductionOrderDetail';
 
 const ProductionManagement = () => {
@@ -31,7 +31,7 @@ const ProductionManagement = () => {
           onBack={() => handleSelectOrder(null)}
         />
       ) : (
-        <ProductionQueue onViewProduct={handleSelectOrder} />
+        <ProductionOrdersList onViewProduct={handleSelectOrder} />
       )}
     </div>
   );

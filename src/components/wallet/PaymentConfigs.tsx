@@ -21,8 +21,10 @@ const PAYMENT_TYPES = [
 ] as const;
 
 const STAGES = [
-  'wood_cutting', 'frame_assembly', 'board_fitting', 'sanding', 'fabric_lining',
-  'painting', 'handle_installation', 'glass_installation', 'final_assembly', 'quality_inspection',
+  'Frame and body assembly',
+  'Sanding and painting',
+  'Cloth lining and final assembly',
+  'Glass fitting',
 ] as const;
 
 interface ConfigForm {
