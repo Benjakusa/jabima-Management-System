@@ -141,7 +141,7 @@ const WorkshopMaterialRequests = () => {
               </select>
               {materialsError && <p className="text-xs text-red-500">Error: {materialsError.message}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label className="text-xs">Quantity *</Label>
                 <Input type="number" min="0.01" step="0.01" value={form.quantity_requested} onChange={e => setForm(f => ({ ...f, quantity_requested: e.target.value }))} placeholder="0" />

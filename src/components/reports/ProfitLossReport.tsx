@@ -112,7 +112,7 @@ const ProfitLossReport = ({ dateRange }: Props) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Revenue</p><p className="text-lg font-bold font-display text-success">{fmt(totalRevenue)}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Costs</p><p className="text-lg font-bold font-display text-destructive">{fmt(totalCosts)}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4">

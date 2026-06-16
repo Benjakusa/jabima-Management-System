@@ -25,7 +25,7 @@ const InstalmentOverview = () => {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
         <Card className="border border-destructive/30 bg-destructive/5">
           <CardContent className="p-3 text-center">
             <p className="text-[10px] text-muted-foreground">Overdue</p>

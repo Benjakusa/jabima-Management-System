@@ -70,7 +70,7 @@ const WorkshopOverview = () => {
   return (
     <div className="space-y-6">
       {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {stats.map(s => (
           <Card key={s.label} className="border">
             <CardContent className="p-3">

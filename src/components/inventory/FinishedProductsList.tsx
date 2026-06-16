@@ -298,7 +298,7 @@ const FinishedProductsList = () => {
                             {/* Coffin type picker — shared */}
                             <div className="space-y-2">
                                 <Label>Coffin Type</Label>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-2">
                                     {productTypes.map(type => {
                                         const selected = mode === 'external'
                                             ? externalForm.product_type === type

@@ -42,12 +42,12 @@ const ExpenseOverview = () => {
   const categories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
 
   if (isLoading) {
-    return <div className="space-y-4"><div className="grid grid-cols-2 lg:grid-cols-3 gap-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-card rounded-2xl border p-4 animate-pulse h-24" />)}</div></div>;
+    return <div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-card rounded-2xl border p-4 animate-pulse h-24" />)}</div></div>;
   }
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <Card className="border"><CardContent className="p-4">
           <div className="flex items-center gap-2 mb-2"><TrendingUp className="h-4 w-4 text-destructive" /><span className="text-xs text-muted-foreground">Total Expenses</span></div>
           <p className="text-lg font-bold font-display text-foreground">{fmt(total)}</p>

@@ -356,7 +356,7 @@ const ProductSalesList = ({ onViewReceipt }: Props) => {
                   </span>
                 </label>
                 {form.enable_instalments && (
-                  <div className="bg-accent/20 p-3 rounded-lg grid grid-cols-3 gap-3">
+                  <div className="bg-accent/20 p-3 rounded-lg grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     <div>
                       <Label className="text-xs">Deposit (Ksh)</Label>
                       <Input type="number" value={form.deposit} onChange={e => setForm(f => ({ ...f, deposit: e.target.value }))} className="h-10 text-sm" placeholder="0" min="0" />

@@ -168,7 +168,7 @@ const UserForm = ({ editUser, branches, onSuccess, onCancel }: Props) => {
 
           <div className="space-y-2">
             <Label>Role *</Label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-2">
               {assignableRoles.map((key) => (
                 <button key={key} type="button" onClick={() => setForm(f => ({ ...f, role: key }))}
                   className={cn(

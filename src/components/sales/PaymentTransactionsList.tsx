@@ -122,7 +122,7 @@ const PaymentTransactionsList = ({ saleId, totalAmount, onPaymentUpdate }: Props
                 </button>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <Label className="text-[10px]">Amount (Ksh)</Label>
                 <Input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}

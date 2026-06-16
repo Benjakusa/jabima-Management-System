@@ -206,7 +206,7 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Quantity</Label>
                   <Input type="number" min="1" max="100" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="How many?" />

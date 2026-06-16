@@ -82,7 +82,7 @@ const SalesReport = ({ dateRange }: Props) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 gap-3">
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Revenue</p><p className="text-lg font-bold font-display text-success">{fmt(totalRevenue)}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Product Sales</p><p className="text-lg font-bold font-display text-foreground">{fmt(productRevenue)}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Service Sales</p><p className="text-lg font-bold font-display text-foreground">{fmt(serviceRevenue)}</p></CardContent></Card>

@@ -65,7 +65,7 @@ const SalesOverview = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <StatCard title="Revenue Today" value={fmt(revToday)} icon={<DollarSign className="h-5 w-5" />} />
         <StatCard title="Revenue This Week" value={fmt(revWeek)} icon={<TrendingUp className="h-5 w-5" />} />
         <StatCard title="Revenue This Month" value={fmt(revMonth)} icon={<Calendar className="h-5 w-5" />} />

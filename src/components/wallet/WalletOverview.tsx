@@ -39,7 +39,7 @@ const WalletOverview = () => {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-card rounded-2xl border p-4 animate-pulse h-24" />
           ))}
@@ -51,7 +51,7 @@ const WalletOverview = () => {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((s) => (
           <Card key={s.label} className="border">
             <CardContent className="p-4">

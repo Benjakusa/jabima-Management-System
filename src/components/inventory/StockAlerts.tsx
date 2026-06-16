@@ -34,7 +34,7 @@ const StockAlerts = () => {
   return (
     <div className="space-y-6">
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         <div className="bg-destructive/5 border border-destructive/20 rounded-2xl p-4 text-center">
           <PackageX className="h-6 w-6 text-destructive mx-auto mb-1" />
           <p className="text-2xl font-bold font-display text-destructive">{outOfStock.length}</p>

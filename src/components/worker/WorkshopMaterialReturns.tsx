@@ -120,7 +120,7 @@ const WorkshopMaterialReturns = () => {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label className="text-xs">Quantity *</Label>
                 <Input type="number" min="0.01" step="0.01" value={form.quantity_returned} onChange={e => setForm(f => ({ ...f, quantity_returned: e.target.value }))} placeholder="0" />

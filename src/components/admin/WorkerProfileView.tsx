@@ -84,7 +84,7 @@ const WorkerProfileView = ({ user, branches }: Props) => {
           <CardTitle className="text-lg flex items-center gap-2"><User className="h-5 w-5 text-primary" /> Personal Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
             <div><p className="text-muted-foreground text-xs">Full Name</p><p className="font-medium text-foreground">{user.full_name}</p></div>
             <div><p className="text-muted-foreground text-xs">Email</p><p className="font-medium text-foreground">{user.email}</p></div>
             <div><p className="text-muted-foreground text-xs">Phone</p><p className="font-medium text-foreground">{user.phone || '—'}</p></div>
@@ -102,7 +102,7 @@ const WorkerProfileView = ({ user, branches }: Props) => {
         </CardHeader>
         <CardContent>
           {wallet ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
               <div><p className="text-muted-foreground text-xs">Total Earnings</p><p className="font-bold text-foreground">{formatCurrency(totalEarnings)}</p></div>
               <div><p className="text-muted-foreground text-xs">Pending</p><p className="font-bold text-warning">{formatCurrency(wallet.pending_earnings)}</p></div>
               <div><p className="text-muted-foreground text-xs">Approved</p><p className="font-bold text-success">{formatCurrency(wallet.approved_earnings)}</p></div>

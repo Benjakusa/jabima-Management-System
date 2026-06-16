@@ -107,7 +107,7 @@ const LipaPolePoleSection = () => {
                   Total: <span className="font-bold text-foreground">{formatCurrency((selectedSale as any).selling_price)}</span>
                   {' · '}Paid: <span className="font-medium">{formatCurrency((selectedSale as any).amount_paid || 0)}</span>
                 </p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                   <div>
                     <Label className="text-[10px]">Deposit</Label>
                     <Input type="number" value={saleForm.deposit} onChange={e => setSaleForm(f => ({ ...f, deposit: e.target.value }))} className="h-9 text-sm" placeholder="0" />

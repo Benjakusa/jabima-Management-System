@@ -110,7 +110,7 @@ const DailyReportsOverview = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         <Card className="border"><CardContent className="p-4 text-center">
           <p className="text-xs text-muted-foreground">Reports Submitted</p>
           <p className="text-2xl font-bold font-display text-primary">{reports?.length || 0}</p>

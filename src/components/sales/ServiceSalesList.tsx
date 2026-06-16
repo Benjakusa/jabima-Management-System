@@ -228,7 +228,7 @@ const ServiceSalesList = ({ onViewReceipt }: Props) => {
             <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-4">
               <div className="space-y-2">
                 <Label>Service Type *</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-2">
                   {(serviceTypes || []).map((s: any) => (
                     <button key={s.name} type="button"
                       onClick={() => setForm(f => ({ ...f, service_name: s.name, amount: String(s.base_price || '') }))}

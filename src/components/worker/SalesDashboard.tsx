@@ -61,17 +61,21 @@ const SalesDashboard = () => {
     queryFn: async () => {
       const branchId = profile?.branch_id;
 
-      // If officer has a branch, show products ONLY from shop_inventory (fulfilled to their branch)
       if (branchId) {
         const { data: shopItems } = await supabase
           .from('shop_inventory')
-          .select('finished_product_id, finished_products(id, product_type, production_cost, completed_at, batch_number)')
+          .select('id, finished_product_id, finished_products(id, product_type, production_cost, completed_at, batch_number, status)')
           .eq('branch_id', branchId);
 
         if (shopItems && shopItems.length > 0) {
           const seen = new Set<string>();
-          return shopItems.map((s: any) => s.finished_products).filter((p: any) => {
+          return shopItems.map((s: any) => ({
+            ...s.finished_products,
+            shop_inventory_id: s.id // Inject shop_inventory_id so it can be deleted upon sale
+          })).filter((p: any) => {
             if (!p || seen.has(p.id)) return false;
+            // Exclude sold or non-completed products
+            if (p.status === 'sold' || p.status === 'in_production') return false;
             seen.add(p.id);
             return true;
           });
@@ -79,10 +83,10 @@ const SalesDashboard = () => {
         return [];
       }
 
-      // No branch - show all completed products from main warehouse
+      // No branch - show all completed (not sold) products from main warehouse
       const { data, error } = await supabase
         .from('finished_products')
-        .select('id, product_type, production_cost, completed_at, branch_id, batch_number')
+        .select('id, product_type, production_cost, completed_at, branch_id, batch_number, status')
         .eq('status', 'completed')
         .is('branch_id', null)
         .order('completed_at', { ascending: false });
@@ -119,13 +123,20 @@ const SalesDashboard = () => {
     enabled: !!user,
   });
 
-  const { data: myWallet } = useQuery({
+  const { data: myWallet, refetch: refetchWallet } = useQuery({
     queryKey: ['my-wallet', user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from('wallets').select('*').eq('user_id', user!.id).single();
+      // Use maybeSingle() to avoid throwing when wallet doesn't exist yet
+      const { data, error } = await supabase.from('wallets').select('*').eq('user_id', user!.id).maybeSingle();
+      if (error) {
+        console.error('[Wallet] fetch error:', error);
+        return null;
+      }
       return data;
     },
     enabled: !!user,
+    // Refetch every 30s so new earnings appear quickly even without explicit invalidation
+    refetchInterval: 30_000,
   });
 
   const requestPayoutMutation = useMutation({
@@ -148,12 +159,29 @@ const SalesDashboard = () => {
   });
 
   const { data: walletTxns } = useQuery({
-    queryKey: ['my-wallet-txns', myWallet?.id],
+    queryKey: ['my-wallet-txns', user?.id, myWallet?.id],
     queryFn: async () => {
-      const { data } = await supabase.from('wallet_transactions').select('*').eq('wallet_id', myWallet!.id).order('created_at', { ascending: false }).limit(50);
+      // If we already have the wallet id, query directly for performance
+      if (myWallet?.id) {
+        const { data } = await supabase
+          .from('wallet_transactions')
+          .select('*')
+          .eq('wallet_id', myWallet.id)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        return data || [];
+      }
+      // Fallback: join through wallets table to find transactions by user_id
+      const { data } = await supabase
+        .from('wallet_transactions')
+        .select('*, wallets!inner(user_id)')
+        .eq('wallets.user_id', user!.id)
+        .order('created_at', { ascending: false })
+        .limit(100);
       return data || [];
     },
-    enabled: !!myWallet,
+    enabled: !!user,
+    refetchInterval: 30_000,
   });
 
   const { data: paymentConfigs } = useQuery({
@@ -186,8 +214,17 @@ const SalesDashboard = () => {
   const todayTotal = todayProductRevenue + todayServiceRevenue;
 
   // Commission config
-  const commissionConfig = paymentConfigs?.find(c => c.payment_type === 'commission');
-  const todayCommission = commissionConfig ? (todaySales.length + todayServiceSales.length) * commissionConfig.amount : 0;
+  const commissionConfig = paymentConfigs?.find(c => c.payment_type === 'commission' || c.payment_type === 'percentage');
+  let todayCommission = 0;
+  if (commissionConfig) {
+    if (commissionConfig.payment_type === 'percentage' || (commissionConfig as any).rate_type === 'percentage') {
+      const pct = (commissionConfig as any).percentage ?? (commissionConfig as any).rate_value ?? commissionConfig.amount;
+      todayCommission = todayProductRevenue * (pct / 100);
+    } else {
+      const amt = (commissionConfig as any).rate_value ?? commissionConfig.amount;
+      todayCommission = todaySales.length * amt;
+    }
+  }
 
   // Payment mode: Full Payment or Lipa Pole Pole
   const [paymentMode, setPaymentMode] = useState<'full' | 'lipa'>('full');
@@ -224,6 +261,17 @@ const SalesDashboard = () => {
     mutationFn: async () => {
       const product = finishedProducts?.find(p => p.id === pForm.finished_product_id);
       if (!product) throw new Error('Select a product');
+
+      // Pre-sale guard: verify product is still available in DB (prevents double-sales)
+      const { data: latestProduct, error: checkErr } = await supabase
+        .from('finished_products')
+        .select('status')
+        .eq('id', pForm.finished_product_id)
+        .maybeSingle();
+      if (checkErr) throw new Error('Could not verify product availability');
+      if (!latestProduct || latestProduct.status === 'sold') {
+        throw new Error('Product has already been sold and is no longer available.');
+      }
       if (!pForm.customer_name.trim()) throw new Error('Customer name required');
 
       const sellingPrice = parseFloat(pForm.selling_price);
@@ -322,6 +370,9 @@ const SalesDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ['my-product-sales'] });
       queryClient.invalidateQueries({ queryKey: ['available-products'] });
       queryClient.invalidateQueries({ queryKey: ['instalment-schedules'] });
+      // Refresh wallet so commission shows up immediately
+      queryClient.invalidateQueries({ queryKey: ['my-wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['my-wallet-txns'] });
       if (data) { setReceiptId(data.id); setReceiptType('product'); setActiveView('receipt'); }
     },
     onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
@@ -510,7 +561,7 @@ const SalesDashboard = () => {
         {activeView === 'home' && (
           <div className="space-y-4">
             {/* Stats */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Card className="border"><CardContent className="p-3 text-center">
                 <p className="text-[10px] text-muted-foreground">Today's Sales</p>
                 <p className="text-lg font-bold font-display text-success">{fmt(todayTotal)}</p>
@@ -524,7 +575,13 @@ const SalesDashboard = () => {
               <Card className="border"><CardContent className="p-3 text-center">
                 <p className="text-[10px] text-muted-foreground">Commission Today</p>
                 <p className="text-lg font-bold font-display text-accent-foreground">{fmt(todayCommission)}</p>
-                <p className="text-[10px] text-muted-foreground">{commissionConfig ? `${fmt(commissionConfig.amount)}/sale` : 'Not set'}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {commissionConfig 
+                    ? ((commissionConfig as any).payment_type === 'percentage' || (commissionConfig as any).rate_type === 'percentage'
+                      ? `${(commissionConfig as any).percentage ?? (commissionConfig as any).rate_value ?? commissionConfig.amount}% per sale`
+                      : `${fmt((commissionConfig as any).rate_value ?? commissionConfig.amount)}/sale`)
+                    : 'Not set'}
+                </p>
               </CardContent></Card>
               <Card className="border"><CardContent className="p-3 text-center">
                 <p className="text-[10px] text-muted-foreground">Daily Target</p>
@@ -537,7 +594,7 @@ const SalesDashboard = () => {
             </div>
 
             {/* Quick actions */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Button onClick={() => setActiveView('product')} size="lg" className="h-14">
                 <ShoppingCart className="h-5 w-5" />Product Sale
               </Button>
@@ -583,7 +640,7 @@ const SalesDashboard = () => {
             <Button variant="ghost" size="sm" onClick={() => setActiveView('home')}>← Back</Button>
 
             {/* Payment Mode Selector */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button type="button" onClick={() => setPaymentMode('full')}
                 className={cn("p-4 rounded-xl border-2 text-center transition-all", paymentMode === 'full' ? "border-success bg-success/5" : "border-border hover:border-success/30")}>
                 <ShoppingCart className={cn("h-6 w-6 mx-auto mb-1", paymentMode === 'full' ? "text-success" : "text-muted-foreground")} />
@@ -649,7 +706,7 @@ const SalesDashboard = () => {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><Label className="text-xs">Customer Name *</Label><Input value={pForm.customer_name} onChange={e => setPForm(f => ({ ...f, customer_name: e.target.value }))} className="h-10 text-sm" required /></div>
                     <div><Label className="text-xs">Phone</Label><Input value={pForm.customer_phone} onChange={e => setPForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
                     <div><Label className="text-xs">Selling Price (Ksh) *</Label><Input type="number" value={pForm.selling_price} onChange={e => setPForm(f => ({ ...f, selling_price: e.target.value }))} className="h-10 text-sm" required /></div>
@@ -661,7 +718,7 @@ const SalesDashboard = () => {
                       <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
                         <TrendingUp className="h-3.5 w-3.5" /> Instalment Plan
                       </p>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                         <div>
                           <Label className="text-[10px]">Deposit (Ksh)</Label>
                           <Input type="number" value={instalmentConfig.deposit} onChange={e => setInstalmentConfig(f => ({ ...f, deposit: e.target.value }))} className="h-8 text-sm" placeholder="0" min="0" />
@@ -716,7 +773,7 @@ const SalesDashboard = () => {
                       </div>
 
                       {showAdvancedMpesa && (
-                        <div className="grid grid-cols-2 gap-2 pb-2 border-b border-border/50 mb-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pb-2 border-b border-border/50 mb-2">
                           <div>
                             <Label className="text-[9px]">Store Number</Label>
                             <Input value={mpesaOverrides.businessShortCode} onChange={e => setMpesaOverrides(f => ({ ...f, businessShortCode: e.target.value }))} className="h-7 text-[10px]" placeholder="Required for Till" />
@@ -770,7 +827,7 @@ const SalesDashboard = () => {
             <Button variant="ghost" size="sm" onClick={() => setActiveView('home')}>← Back</Button>
 
             {/* Payment Mode Selector */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button type="button" onClick={() => setPaymentMode('full')}
                 className={cn("p-4 rounded-xl border-2 text-center transition-all", paymentMode === 'full' ? "border-success bg-success/5" : "border-border hover:border-success/30")}>
                 <Briefcase className={cn("h-6 w-6 mx-auto mb-1", paymentMode === 'full' ? "text-success" : "text-muted-foreground")} />
@@ -794,7 +851,7 @@ const SalesDashboard = () => {
                 <form onSubmit={(e) => { e.preventDefault(); serviceMutation.mutate(); }} className="space-y-4">
                   <div className="space-y-2">
                     <Label className="text-xs">Service Type *</Label>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {(myServices || []).map((s: any) => (
                         <button key={s.name} type="button" onClick={() => setSForm(f => ({ ...f, service_name: s.name, amount: f.amount || s.base_price?.toString() || '' }))}
                           className={cn("px-3 py-2 rounded-lg text-xs border font-medium transition-colors text-center", sForm.service_name === s.name ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent")}>
@@ -809,7 +866,7 @@ const SalesDashboard = () => {
                     </div>
                   </div>
                   {/* Booking details */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><Label className="text-xs">Event Date</Label><Input type="datetime-local" value={sForm.event_date} onChange={e => setSForm(f => ({ ...f, event_date: e.target.value }))} className="h-10 text-sm" /></div>
                     <div><Label className="text-xs">Duration (hrs)</Label><Input type="number" value={sForm.duration} onChange={e => setSForm(f => ({ ...f, duration: e.target.value }))} className="h-10 text-sm" min="1" /></div>
                     <div className="col-span-2"><Label className="text-xs">Location / Address</Label><Input value={sForm.location} onChange={e => setSForm(f => ({ ...f, location: e.target.value }))} className="h-10 text-sm" /></div>
@@ -817,7 +874,7 @@ const SalesDashboard = () => {
                   <div><Label className="text-xs">Special Requirements</Label>
                     <Textarea value={sForm.special_requirements} onChange={e => setSForm(f => ({ ...f, special_requirements: e.target.value }))} placeholder="Flowers, music, decorations..." rows={2} className="text-sm" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><Label className="text-xs">Client Name *</Label><Input value={sForm.customer_name} onChange={e => setSForm(f => ({ ...f, customer_name: e.target.value }))} className="h-10 text-sm" required /></div>
                     <div><Label className="text-xs">Client Phone</Label><Input value={sForm.customer_phone} onChange={e => setSForm(f => ({ ...f, customer_phone: e.target.value }))} className="h-10 text-sm" placeholder="+254..." /></div>
                     <div><Label className="text-xs">Amount (Ksh) *</Label><Input type="number" value={sForm.amount} onChange={e => setSForm(f => ({ ...f, amount: e.target.value }))} className="h-10 text-sm" required /></div>
@@ -829,7 +886,7 @@ const SalesDashboard = () => {
                       <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
                         <TrendingUp className="h-3.5 w-3.5" /> Instalment Plan
                       </p>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                         <div>
                           <Label className="text-[10px]">Deposit (Ksh)</Label>
                           <Input type="number" value={instalmentConfig.deposit} onChange={e => setInstalmentConfig(f => ({ ...f, deposit: e.target.value }))} className="h-8 text-sm" placeholder="0" min="0" />
@@ -879,7 +936,7 @@ const SalesDashboard = () => {
                       </div>
 
                       {showAdvancedMpesa && (
-                        <div className="grid grid-cols-2 gap-2 pb-2 border-b border-border/50 mb-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pb-2 border-b border-border/50 mb-2">
                           <div>
                             <Label className="text-[9px]">Store Number</Label>
                             <Input value={mpesaOverrides.businessShortCode} onChange={e => setMpesaOverrides(f => ({ ...f, businessShortCode: e.target.value }))} className="h-7 text-[10px]" placeholder="Required for Till" />
@@ -937,7 +994,7 @@ const SalesDashboard = () => {
             <h3 className="font-display font-semibold text-foreground text-sm">Sales History</h3>
 
             <Tabs defaultValue="all" className="w-full">
-              <TabsList className="w-full grid grid-cols-3 bg-secondary/50 p-1 rounded-xl">
+              <TabsList className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 bg-secondary/50 p-1 rounded-xl">
                 <TabsTrigger value="all" className="text-xs rounded-lg data-[state=active]:bg-card">All Sales</TabsTrigger>
                 <TabsTrigger value="full" className="text-xs rounded-lg data-[state=active]:bg-card text-success data-[state=active]:text-success">Full Payments</TabsTrigger>
                 <TabsTrigger value="lipa" className="text-xs rounded-lg data-[state=active]:bg-card text-primary data-[state=active]:text-primary">Lipa Pole Pole</TabsTrigger>
@@ -1039,7 +1096,8 @@ const SalesDashboard = () => {
             </div>
             {myWallet ? (
               <>
-                <div className="grid grid-cols-3 gap-2">
+                {/* Balance summary cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                   <Card className="border"><CardContent className="p-3 text-center">
                     <p className="text-[10px] text-muted-foreground">Pending</p>
                     <p className="text-sm font-bold text-warning">{fmt(myWallet.pending_earnings)}</p>
@@ -1049,34 +1107,74 @@ const SalesDashboard = () => {
                     <p className="text-sm font-bold text-primary">{fmt(myWallet.approved_earnings)}</p>
                   </CardContent></Card>
                   <Card className="border"><CardContent className="p-3 text-center">
-                    <p className="text-[10px] text-muted-foreground">Paid</p>
+                    <p className="text-[10px] text-muted-foreground">Paid Out</p>
                     <p className="text-sm font-bold text-success">{fmt(myWallet.paid_earnings)}</p>
                   </CardContent></Card>
                 </div>
-                {commissionConfig && (
-                  <Card className="border"><CardContent className="p-3">
-                    <p className="text-xs text-muted-foreground">Commission Rate</p>
-                    <p className="text-sm font-medium text-foreground">{fmt(commissionConfig.amount)} per sale</p>
-                  </CardContent></Card>
-                )}
+
+                {/* Total earnings highlight */}
+                <Card className="border border-primary/20 bg-primary/5">
+                  <CardContent className="p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Lifetime Earnings</p>
+                      <p className="text-lg font-bold font-display text-primary">
+                        {fmt(myWallet.pending_earnings + myWallet.approved_earnings + myWallet.paid_earnings)}
+                      </p>
+                    </div>
+                    {commissionConfig && (
+                      <div className="text-right">
+                        <p className="text-[10px] text-muted-foreground">Commission Rate</p>
+                        <p className="text-sm font-semibold text-foreground">
+                          {(commissionConfig as any).rate_type === 'percentage'
+                            ? `${(commissionConfig as any).rate_value ?? (commissionConfig as any).percentage ?? commissionConfig.amount}% per sale`
+                            : `${fmt(commissionConfig.amount)} per sale`}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 <h4 className="text-xs font-medium text-muted-foreground">Transaction History</h4>
                 <div className="space-y-1">
-                  {(walletTxns || []).length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No transactions yet</p>}
+                  {(walletTxns || []).length === 0 && (
+                    <Card className="border">
+                      <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                        <TrendingUp className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
+                        <p>No earnings yet. Make a sale to earn commission!</p>
+                      </CardContent>
+                    </Card>
+                  )}
                   {(walletTxns || []).map(tx => (
                     <Card key={tx.id} className="border">
                       <CardContent className="p-3 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{tx.description || tx.type}</p>
-                          <p className="text-[10px] text-muted-foreground">{new Date(tx.created_at).toLocaleDateString()}{tx.payment_method ? ` • ${tx.payment_method}` : ''}{tx.reference_number ? ` • ${tx.reference_number}` : ''}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {tx.description || (tx.type === 'earned' ? 'Commission Earned' : tx.type === 'approved' ? 'Earnings Approved' : tx.type === 'paid' ? 'Payout Sent' : tx.type)}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(tx.created_at).toLocaleDateString()} {new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {(tx as any).reference_number ? ` • ${(tx as any).reference_number}` : ''}
+                          </p>
                         </div>
-                        <span className={cn("text-sm font-bold", tx.type === 'payout' ? 'text-success' : 'text-foreground')}>{fmt(tx.amount)}</span>
+                        <span className={cn(
+                          "text-sm font-bold shrink-0 ml-2",
+                          tx.type === 'earned' ? 'text-warning' : tx.type === 'approved' ? 'text-primary' : tx.type === 'paid' ? 'text-success' : 'text-foreground'
+                        )}>
+                          +{fmt(tx.amount)}
+                        </span>
                       </CardContent>
                     </Card>
                   ))}
                 </div>
               </>
             ) : (
-              <Card className="border"><CardContent className="p-6 text-center text-sm text-muted-foreground">Wallet not found</CardContent></Card>
+              <Card className="border">
+                <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                  <Wallet className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
+                  <p className="font-medium">Wallet is being set up</p>
+                  <p className="text-xs mt-1">Make your first sale and your wallet will appear here automatically.</p>
+                </CardContent>
+              </Card>
             )}
           </div>
         )}
@@ -1236,7 +1334,7 @@ function InstalmentPaymentSection({ saleId, sale }: { saleId: string; sale: any 
         </div>
 
         {/* Summary */}
-        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-center text-xs">
           <div className="bg-accent/30 rounded-lg p-2">
             <p className="text-muted-foreground">Total</p>
             <p className="font-bold text-foreground">{formatCurrency(totalDue)}</p>

@@ -77,7 +77,7 @@ const SystemPreferences = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 gap-3">
             {systemInfo.map(s => (
               <div key={s.label} className="bg-secondary/30 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-1">

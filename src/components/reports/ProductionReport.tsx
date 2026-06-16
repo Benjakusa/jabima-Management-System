@@ -69,7 +69,7 @@ const ProductionReport = ({ dateRange }: Props) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">In Production</p><p className="text-lg font-bold font-display text-warning">{inProduction}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Completed</p><p className="text-lg font-bold font-display text-success">{completed}</p></CardContent></Card>
         <Card className="border"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Sold</p><p className="text-lg font-bold font-display text-primary">{sold}</p></CardContent></Card>

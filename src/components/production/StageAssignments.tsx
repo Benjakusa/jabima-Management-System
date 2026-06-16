@@ -124,7 +124,7 @@ const StageAssignments = () => {
                   No workshop workers found. Create users with the "Workshop Worker" role first.
                 </p>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 gap-2">
                   {workers.map(w => (
                     <button key={w.user_id} type="button" onClick={() => setSelectedWorker(w.user_id)}
                       className={cn("px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors text-center truncate",
@@ -137,7 +137,7 @@ const StageAssignments = () => {
 
             <div className="space-y-2">
               <p className="text-sm font-medium text-foreground">Select Stage</p>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-5 gap-2">
                 {STAGES.map(s => (
                   <button key={s.value} type="button" onClick={() => setSelectedStage(s.value)}
                     className={cn("px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors flex items-center gap-1.5 justify-center",

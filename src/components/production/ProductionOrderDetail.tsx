@@ -49,7 +49,7 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
         queryKey: ['wp_production_tasks', orderId],
         queryFn: async () => {
             const { data, error } = await supabase.from('wp_production_tasks' as any)
-                .select('*')
+                .select('*, assigned_officer:profiles(*)')
                 .eq('order_id', orderId);
             if (error) throw error;
             return data || [];
