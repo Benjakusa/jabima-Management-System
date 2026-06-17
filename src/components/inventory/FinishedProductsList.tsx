@@ -241,9 +241,9 @@ const FinishedProductsList = () => {
     return (
         <div className="space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">{filtered.length} coffin{filtered.length !== 1 ? 's' : ''} in store</p>
-                <Button onClick={() => { resetForm(); setMode('external'); setShowForm(!showForm); }} size="lg">
+                <Button onClick={() => { resetForm(); setMode('external'); setShowForm(!showForm); }} size="sm" className="shrink-0">
                     {showForm ? <X className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
                     {showForm ? 'Cancel' : 'Add External Stock'}
                 </Button>

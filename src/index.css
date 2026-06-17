@@ -109,4 +109,18 @@
   .font-body {
     font-family: var(--font-body);
   }
+
+  /* Hide scrollbar while preserving scrollability */
+  .scrollbar-none {
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* IE / Edge */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;                /* Chrome / Safari */
+  }
+
+  /* Safe-area padding for mobile bottom nav */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }

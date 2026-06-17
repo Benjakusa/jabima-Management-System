@@ -73,10 +73,10 @@ const InventoryOfficerDashboard = () => {
             <p className="text-[10px] lg:text-xs text-muted-foreground xs:hidden">{profile?.full_name?.split(' ')[0]}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 overflow-x-auto max-w-[55vw] sm:max-w-none scrollbar-none">
           {secondaryTabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={cn("p-2 rounded-lg transition-colors relative group",
+              className={cn("p-2 rounded-lg transition-colors relative group shrink-0",
                 activeTab === tab.id ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
               )} title={tab.label}>
               <tab.icon className="h-4 w-4" />
@@ -90,7 +90,7 @@ const InventoryOfficerDashboard = () => {
               </span>
             </button>
           ))}
-          <Button variant="ghost" size="icon" onClick={signOut}>
+          <Button variant="ghost" size="icon" onClick={signOut} className="shrink-0 ml-0.5">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
@@ -145,16 +145,16 @@ const InventoryOfficerDashboard = () => {
       </div>
 
       {/* Bottom navigation - hidden on desktop */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t z-50 px-2 py-1 safe-area-pb lg:hidden">
-        <div className="max-w-2xl mx-auto flex items-center justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t z-50 px-1 py-1 safe-area-pb lg:hidden">
+        <div className="flex items-center overflow-x-auto scrollbar-none">
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-lg transition-colors min-w-0",
+                "flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-lg transition-colors shrink-0 flex-1 min-w-[52px]",
                 activeTab === tab.id ? "text-primary" : "text-muted-foreground"
               )}>
               <tab.icon className="h-4 w-4" />
-              <span className="text-[9px] font-medium truncate">{tab.label}</span>
+              <span className="text-[9px] font-medium truncate max-w-full">{tab.label}</span>
             </button>
           ))}
         </div>

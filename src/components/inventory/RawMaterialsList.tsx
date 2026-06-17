@@ -143,9 +143,9 @@ const RawMaterialsList = () => {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{filtered.length} material{filtered.length !== 1 ? 's' : ''}</p>
-        <Button onClick={() => { resetForm(); setShowForm(!showForm); }} size="lg">
+        <Button onClick={() => { resetForm(); setShowForm(!showForm); }} size="sm" className="shrink-0">
           {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           {showForm ? 'Cancel' : 'Add Material'}
         </Button>
