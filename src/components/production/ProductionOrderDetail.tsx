@@ -124,8 +124,17 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
 
             if (allCompleted) {
                 await supabase.from('production_orders')
-                    .update({ status: 'completed', current_stage: 4 }) // Final stage
+                    .update({ status: 'completed', current_stage: 4, completed_at: new Date().toISOString() }) // Final stage
                     .eq('id', orderId);
+
+                const { data: order } = await supabase.from('production_orders').select('*').eq('id', orderId).single();
+                if (order) {
+                    await supabase.from('finished_products').insert({
+                        production_order_id: orderId,
+                        product_type: order.product_type,
+                        production_cost: order.production_cost || 0,
+                    });
+                }
             } else {
                 // Increment current stage in the order
                 await supabase.from('production_orders')

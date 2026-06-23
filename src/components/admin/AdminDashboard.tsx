@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import StatCard from '@/components/cards/StatCard';
@@ -13,36 +12,18 @@ import InstalmentOverview from './InstalmentOverview';
 import WorkshopEmployerOverview from './WorkshopEmployerOverview';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
-  DollarSign, Clock, TrendingUp, AlertTriangle, PartyPopper, Building2
+  DollarSign, Clock, TrendingUp, PartyPopper, Building2
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
-interface DashboardStats {
-  totalMaterialsValue: number;
-  finishedProducts: number;
-  inProduction: number;
-  completedToday: number;
-  soldToday: number;
-  revenueToday: number;
-  pendingPayments: number;
-}
+const REFETCH_INTERVAL = 30000;
 
 const AdminDashboard = () => {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalMaterialsValue: 0,
-    finishedProducts: 0,
-    inProduction: 0,
-    completedToday: 0,
-    soldToday: 0,
-    revenueToday: 0,
-    pendingPayments: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  const today = new Date().toISOString().split('T')[0];
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      const today = new Date().toISOString().split('T')[0];
-
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['admin-dashboard-stats', today],
+    queryFn: async () => {
       const [materialsRes, finishedRes, productionRes, completedRes, salesRes, walletsRes] =
         await Promise.all([
           supabase.from('inventory_materials').select('quantity, unit_cost'),
@@ -59,7 +40,7 @@ const AdminDashboard = () => {
       const revenue = (salesRes.data || []).reduce((sum, s) => sum + s.selling_price, 0);
       const pending = (walletsRes.data || []).reduce((sum, w) => sum + w.pending_earnings, 0);
 
-      setStats({
+      return {
         totalMaterialsValue: materialsValue,
         finishedProducts: finishedRes.data?.length || 0,
         inProduction: productionRes.data?.length || 0,
@@ -67,14 +48,12 @@ const AdminDashboard = () => {
         soldToday: salesRes.data?.length || 0,
         revenueToday: revenue,
         pendingPayments: pending,
-      });
-      setLoading(false);
-    };
+      };
+    },
+    refetchInterval: REFETCH_INTERVAL,
+  });
 
-    fetchStats();
-  }, []);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <h2 className="font-display text-xl font-bold text-foreground">Dashboard</h2>

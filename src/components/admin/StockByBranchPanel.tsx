@@ -4,6 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+const REFETCH_INTERVAL = 30000;
+
 const StockByBranchPanel = () => {
   const { data: branches } = useQuery({
     queryKey: ['branches-list-stock'],
@@ -11,6 +13,7 @@ const StockByBranchPanel = () => {
       const { data } = await supabase.from('branches').select('id, name').order('name');
       return data || [];
     },
+    refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: finishedProducts, isLoading } = useQuery({
@@ -23,6 +26,7 @@ const StockByBranchPanel = () => {
         .eq('is_active', true);
       return data || [];
     },
+    refetchInterval: REFETCH_INTERVAL,
   });
 
   if (isLoading) return <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>;

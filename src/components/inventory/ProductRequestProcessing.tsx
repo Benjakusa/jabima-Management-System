@@ -83,14 +83,18 @@ const ProductRequestProcessing = () => {
                 .eq('status', 'completed')
                 .not('status', 'is', 'sold');
 
-            const { data: existingInShop } = await supabase
-                .from('shop_inventory')
-                .select('finished_product_id');
+            const [existingInShop, pendingRequests] = await Promise.all([
+                supabase.from('shop_inventory').select('finished_product_id'),
+                supabase.from('product_requests').select('selected_product_ids').in('status', ['pending', 'approved']),
+            ]);
 
-            const usedProductIds = (existingInShop || []).map((s: any) => s.finished_product_id);
+            const usedProductIds = (existingInShop?.data || []).map((s: any) => s.finished_product_id);
+            const pickedIds = (pendingRequests?.data || []).flatMap((r: any) => r.selected_product_ids || []);
 
-            if (usedProductIds.length > 0) {
-                query = query.not('id', 'in', `(${usedProductIds.join(',')})`);
+            const unavailableIds = Array.from(new Set([...usedProductIds, ...pickedIds]));
+
+            if (unavailableIds.length > 0) {
+                query = query.not('id', 'in', `(${unavailableIds.join(',')})`);
             }
 
             const { data } = await query;
