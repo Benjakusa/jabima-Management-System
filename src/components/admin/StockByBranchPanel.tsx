@@ -1,19 +1,32 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const REFETCH_INTERVAL = 30000;
-
 const StockByBranchPanel = () => {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const channel = supabase.channel('stock-branch-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finished_products' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['finished-products-branch-summary'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['branches-list-stock'] });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
   const { data: branches } = useQuery({
     queryKey: ['branches-list-stock'],
     queryFn: async () => {
       const { data } = await supabase.from('branches').select('id, name').order('name');
       return data || [];
     },
-    refetchInterval: REFETCH_INTERVAL,
   });
 
   const { data: finishedProducts, isLoading } = useQuery({
@@ -26,7 +39,6 @@ const StockByBranchPanel = () => {
         .eq('is_active', true);
       return data || [];
     },
-    refetchInterval: REFETCH_INTERVAL,
   });
 
   if (isLoading) return <div className="p-4 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>;

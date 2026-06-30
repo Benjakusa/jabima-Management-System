@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import StatCard from '@/components/cards/StatCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,10 +17,32 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
-const REFETCH_INTERVAL = 30000;
-
 const AdminDashboard = () => {
   const today = new Date().toISOString().split('T')[0];
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const channel = supabase.channel('admin-dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_materials' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finished_products' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+        queryClient.invalidateQueries({ queryKey: ['recently-completed-orders'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_orders' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['admin-dashboard-stats', today],
@@ -50,7 +73,6 @@ const AdminDashboard = () => {
         pendingPayments: pending,
       };
     },
-    refetchInterval: REFETCH_INTERVAL,
   });
 
   if (isLoading) {
@@ -162,7 +184,6 @@ const RecentlyCompletedOrders = () => {
         .limit(10);
       return data || [];
     },
-    refetchInterval: 30000,
   });
 
   if (!recentCompleted || recentCompleted.length === 0) return null;
