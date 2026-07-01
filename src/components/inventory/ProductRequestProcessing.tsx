@@ -105,16 +105,27 @@ const ProductRequestProcessing = () => {
 
     const fulfillMutation = useMutation({
         mutationFn: async ({ requestId, productIds, branchId }: { requestId: string; productIds: string[]; branchId: string | null }) => {
-            const inserts = productIds.map(productId => ({
-                finished_product_id: productId,
-                branch_id: branchId || null,
-                transferred_by: user!.id,
-            }));
+            // Check which products are already in shop_inventory for this branch
+            const { data: existing } = await supabase
+                .from('shop_inventory')
+                .select('finished_product_id')
+                .in('finished_product_id', productIds)
+                .eq('branch_id', branchId);
 
-            const { error: shopError } = await supabase.from('shop_inventory').insert(inserts);
-            if (shopError) throw shopError;
+            const existingIds = new Set((existing || []).map((e: any) => e.finished_product_id));
+            const newProductIds = productIds.filter(id => !existingIds.has(id));
 
-            // Also update finished_products status
+            if (newProductIds.length > 0) {
+                const inserts = newProductIds.map(productId => ({
+                    finished_product_id: productId,
+                    branch_id: branchId || null,
+                    transferred_by: user!.id,
+                }));
+
+                const { error: shopError } = await supabase.from('shop_inventory').insert(inserts);
+                if (shopError) throw shopError;
+            }
+
             const { error: productError } = await supabase
                 .from('finished_products')
                 .update({
