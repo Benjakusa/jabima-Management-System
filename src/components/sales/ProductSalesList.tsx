@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X, Loader2, Search, ShoppingCart, Receipt, Eye, TrendingUp, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { Plus, X, Loader2, Search, ShoppingCart, Receipt, Eye, TrendingUp, CheckCircle2, XCircle, AlertTriangle, Edit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMpesaPoll } from '@/hooks/useMpesaPoll';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface SaleForm {
   finished_product_id: string;
@@ -37,9 +38,13 @@ const ProductSalesList = ({ onViewReceipt }: Props) => {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<SaleForm>(emptyForm);
   const [search, setSearch] = useState('');
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === 'admin';
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  const [editingSale, setEditingSale] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ selling_price: '', customer_name: '', finished_product_id: '' });
 
   // M-Pesa polling for auto-populating receipt number
   const { mpesaReceiptNumber, pollStatus, isPollActive, startPolling, stopPolling } = useMpesaPoll();
@@ -224,6 +229,44 @@ const ProductSalesList = ({ onViewReceipt }: Props) => {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     },
   });
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!editForm.finished_product_id || !editForm.customer_name.trim() || !editForm.selling_price) {
+        throw new Error('Please fill all required fields');
+      }
+      const { error } = await supabase.rpc('admin_edit_sale', {
+        p_sale_id: editingSale.id,
+        p_new_price: parseFloat(editForm.selling_price),
+        p_new_customer: editForm.customer_name.trim(),
+        p_new_product_id: editForm.finished_product_id,
+        p_admin_id: user!.id
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Sale updated successfully!' });
+      setEditingSale(null);
+      queryClient.invalidateQueries({ queryKey: ['product-sales'] });
+      queryClient.invalidateQueries({ queryKey: ['available-products'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-today'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-week'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-month'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-sales'] });
+    },
+    onError: (err: Error) => {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  });
+
+  const openEditSale = (sale: any) => {
+    setEditingSale(sale);
+    setEditForm({
+      selling_price: sale.selling_price.toString(),
+      customer_name: sale.customer_name,
+      finished_product_id: sale.finished_product_id
+    });
+  };
 
   const filtered = (sales || []).filter(s =>
     s.customer_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -424,15 +467,57 @@ const ProductSalesList = ({ onViewReceipt }: Props) => {
                       <span>{new Date(sale.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => onViewReceipt(sale.id)} className="h-8 w-8 shrink-0 ml-2">
-                    <Receipt className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex">
+                    <Button variant="ghost" size="icon" onClick={() => onViewReceipt(sale.id)} className="h-8 w-8 shrink-0 ml-2">
+                      <Receipt className="h-3.5 w-3.5" />
+                    </Button>
+                    {isAdmin && (
+                      <Button variant="ghost" size="icon" onClick={() => openEditSale(sale)} className="h-8 w-8 shrink-0 ml-1 text-primary">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Admin Edit Sale Dialog */}
+      <Dialog open={!!editingSale} onOpenChange={(open) => !open && setEditingSale(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Sale (Admin)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Select Product *</Label>
+              <select value={editForm.finished_product_id} onChange={e => setEditForm(f => ({ ...f, finished_product_id: e.target.value }))}
+                className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
+                <option value={editingSale?.finished_product_id}>{editingSale?.product_type} (Current)</option>
+                {(finishedProducts || []).map(p => (
+                  <option key={p.id} value={p.id}>{p.product_type} - {fmt(p.production_cost)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Customer Name *</Label>
+              <Input value={editForm.customer_name} onChange={e => setEditForm(f => ({ ...f, customer_name: e.target.value }))} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Selling Price (Ksh) *</Label>
+              <Input type="number" value={editForm.selling_price} onChange={e => setEditForm(f => ({ ...f, selling_price: e.target.value }))} required min="0" step="0.01" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSale(null)}>Cancel</Button>
+            <Button onClick={() => editMutation.mutate()} disabled={editMutation.isPending}>
+              {editMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

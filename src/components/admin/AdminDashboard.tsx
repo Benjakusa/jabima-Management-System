@@ -50,7 +50,7 @@ const AdminDashboard = () => {
       const [materialsRes, finishedRes, productionRes, completedRes, salesRes, walletsRes] =
         await Promise.all([
           supabase.from('inventory_materials').select('quantity, unit_cost'),
-          supabase.from('finished_products').select('id').eq('status', 'completed'),
+          supabase.from('finished_products').select('id').eq('status', 'completed').eq('is_active', true),
           supabase.from('production_orders').select('id').eq('status', 'in_production'),
           supabase.from('production_orders').select('id').eq('status', 'completed').gte('completed_at', today),
           supabase.from('sales').select('selling_price').gte('created_at', today),

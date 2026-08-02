@@ -9,9 +9,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X, Loader2, Search, Factory, Eye, ArrowRight, CheckCircle, Package, Hash } from 'lucide-react';
+import { Plus, X, Loader2, Search, Factory, Eye, ArrowRight, CheckCircle, Package, Hash, Edit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { STAGES } from './ProductionPipeline';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const sizes = ['Adult', 'Child', 'Infant'];
 const materialTypes = ['Oak', 'Mahogany', 'Pine', 'MDF', 'Cypress', 'Paulownia'];
@@ -43,9 +44,13 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
   const [materialType, setMaterialType] = useState('Pine');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdminOrOfficer = role === 'admin' || role === 'inventory_officer';
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const [editingOrder, setEditingOrder] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ product_type: '', notes: '', expected_date: '' });
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ['production-orders-list'],
@@ -150,6 +155,35 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     },
   });
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!editForm.product_type) throw new Error('Product type required');
+      const { error } = await supabase.rpc('update_production_order', {
+        p_order_id: editingOrder.id,
+        p_product_type: editForm.product_type,
+        p_notes: editForm.notes || null,
+        p_expected_date: editForm.expected_date || null,
+        p_user_id: user?.id || null
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Order updated successfully' });
+      setEditingOrder(null);
+      queryClient.invalidateQueries({ queryKey: ['production-orders-list'] });
+    },
+    onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message })
+  });
+
+  const openEdit = (order: any) => {
+    setEditingOrder(order);
+    setEditForm({
+      product_type: order.product_type,
+      notes: order.notes || '',
+      expected_date: order.expected_completion_date || ''
+    });
+  };
 
   const filtered = (orders || []).filter(o => {
     const matchesSearch = o.product_type.toLowerCase().includes(search.toLowerCase()) ||
@@ -319,6 +353,11 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
                       <Button variant="ghost" size="icon" onClick={() => onViewProduct(order.id)} className="h-8 w-8">
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
+                      {isAdminOrOfficer && !isCompleted && (
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(order)} className="h-8 w-8 text-primary">
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -386,6 +425,35 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
           })}
         </div>
       )}
+
+      {/* Edit Order Dialog */}
+      <Dialog open={!!editingOrder} onOpenChange={(open) => !open && setEditingOrder(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Production Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Product Type *</Label>
+              <Input value={editForm.product_type} onChange={e => setEditForm(f => ({ ...f, product_type: e.target.value }))} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Expected Completion Date (optional)</Label>
+              <Input type="date" value={editForm.expected_date} onChange={e => setEditForm(f => ({ ...f, expected_date: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Special instructions..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingOrder(null)}>Cancel</Button>
+            <Button onClick={() => editMutation.mutate()} disabled={editMutation.isPending}>
+              {editMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -27,7 +27,7 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('production_orders')
-        .select('*')
+        .select('*, tasks:wp_production_tasks(assigned_officer_id, status)')
         .eq('status', 'in_production')
         .order('started_at', { ascending: true });
       if (error) throw error;
@@ -111,7 +111,8 @@ const ProductionPipeline = ({ onViewProduct }: ProductionPipelineProps) => {
             {stage.orders.length > 0 && (
               <div className="p-2 space-y-1">
                 {stage.orders.map((order) => {
-                  const officerName = getOfficerName(order.assigned_officer_id);
+                  const activeTask = order.tasks?.find((t: any) => t.status === 'In Progress');
+                  const officerName = getOfficerName(activeTask?.assigned_officer_id || null);
                   return (
                     <button
                       key={order.id}

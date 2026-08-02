@@ -7,19 +7,21 @@ import WorkshopTasks from './WorkshopTasks';
 import WorkshopMaterialRequests from './WorkshopMaterialRequests';
 import WorkshopMaterialReturns from './WorkshopMaterialReturns';
 import WorkshopWallet from './WorkshopWallet';
-import MyStageSelection from './MyStageSelection';
+import MyStagesList from './MyStagesList';
+
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
 import ProductionManagement from '@/components/production/ProductionManagement';
 import { cn } from '@/lib/utils';
 
-type Tab = 'overview' | 'requests' | 'returns' | 'production' | 'wallet' | 'report';
+type Tab = 'overview' | 'mystages' | 'requests' | 'returns' | 'production' | 'wallet' | 'report';
 
 const tabs: { id: Tab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'mystages', label: 'My Stages', icon: FileText },
+  { id: 'production', label: 'Production', icon: Factory },
   { id: 'requests', label: 'Materials', icon: Package },
   { id: 'returns', label: 'Returns', icon: RotateCcw },
-  { id: 'production', label: 'Production', icon: Factory },
   { id: 'wallet', label: 'Wallet', icon: Wallet },
   { id: 'report', label: 'Reports', icon: FileText },
 ];
@@ -52,6 +54,10 @@ const WorkerDashboard = () => {
         <DailyReportReminder />
 
         {activeTab === 'overview' && <WorkshopOverview />}
+        {activeTab === 'mystages' && <MyStagesList onViewProduct={(id) => {
+          localStorage.setItem('selected_production_order_id', id);
+          setActiveTab('production');
+        }} />}
         {activeTab === 'requests' && <WorkshopMaterialRequests />}
         {activeTab === 'returns' && <WorkshopMaterialReturns />}
         {activeTab === 'production' && <ProductionManagement />}

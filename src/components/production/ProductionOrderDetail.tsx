@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, CheckCircle, Lock, Unlock, Play, ListChecks, RotateCcw, User, LayoutDashboard } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface ProductionOrderDetailProps {
     orderId: string;
@@ -23,7 +24,8 @@ const STAGES_DEF = [
 ];
 
 const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) => {
-    const { user } = useAuth();
+    const { user, role } = useAuth();
+    const isAdminOrOfficer = role === 'admin' || role === 'inventory_officer';
     const queryClient = useQueryClient();
     const { toast } = useToast();
 
@@ -54,6 +56,29 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
             if (error) throw error;
             return data || [];
         },
+    });
+
+    const { data: workers } = useQuery({
+        queryKey: ['workshop-workers'],
+        enabled: isAdminOrOfficer,
+        queryFn: async () => {
+            const { data: roles } = await supabase.from('user_roles').select('user_id').eq('role', 'workshop_worker');
+            if (!roles?.length) return [];
+            const userIds = roles.map(r => r.user_id);
+            const { data: profiles } = await supabase.from('profiles').select('user_id, full_name').in('user_id', userIds);
+            return profiles || [];
+        }
+    });
+
+    const reassignMutation = useMutation({
+        mutationFn: async ({ taskId, newUserId }: { taskId: string; newUserId: string }) => {
+            const { error } = await supabase.from('wp_production_tasks').update({ assigned_officer_id: newUserId }).eq('id', taskId);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['wp_production_tasks', orderId] });
+            toast({ title: 'Worker reassigned successfully' });
+        }
     });
 
     useEffect(() => {
@@ -238,14 +263,28 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
                                 {isUnlocked && <Unlock className="h-4 w-4 text-primary" />}
                             </CardHeader>
 
-                            {(!isLocked || myActiveTask) && !isCompleted && (
+                            {(!isLocked || myActiveTask || isAdminOrOfficer) && !isCompleted && (
                                 <CardContent className="p-4 bg-card">
                                     {workerTask && (
                                         <div className="mb-4 space-y-2">
                                             <p className="text-xs font-semibold text-muted-foreground uppercase">Assigned To</p>
                                             <div className="flex items-center gap-2 text-sm bg-accent/30 rounded-lg p-2 border">
                                                 <User className="h-4 w-4 text-primary" />
-                                                <span className="font-medium">{workerTask.assigned_officer?.full_name?.split(' ')[0] || 'Unknown Officer'}</span>
+                                                {isAdminOrOfficer ? (
+                                                    <select
+                                                        className="bg-transparent font-medium outline-none cursor-pointer flex-1"
+                                                        value={workerTask.assigned_officer_id}
+                                                        onChange={(e) => reassignMutation.mutate({ taskId: workerTask.id, newUserId: e.target.value })}
+                                                        disabled={reassignMutation.isPending}
+                                                    >
+                                                        <option value={workerTask.assigned_officer_id}>{workerTask.assigned_officer?.full_name || 'Unknown Officer'}</option>
+                                                        {(workers || []).map(w => (
+                                                            w.user_id !== workerTask.assigned_officer_id && <option key={w.user_id} value={w.user_id}>{w.full_name}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <span className="font-medium">{workerTask.assigned_officer?.full_name?.split(' ')[0] || 'Unknown Officer'}</span>
+                                                )}
                                                 <span className="text-xs text-muted-foreground ml-auto">
                                                     Started {workerTask.started_at ? format(new Date(workerTask.started_at), 'HH:mm') : ''}
                                                 </span>
@@ -264,7 +303,7 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
                                                 <Play className="h-4 w-4 mr-2" />
                                                 Select and Start Stage {stage.stage_number}
                                             </Button>
-                                        ) : myActiveTask && (
+                                        ) : (myActiveTask || isAdminOrOfficer) && (
                                             <Button
                                                 onClick={() => completeStageMutation.mutate({ stageId: stage.id, stageNum: stage.stage_number })}
                                                 disabled={completeStageMutation.isPending}

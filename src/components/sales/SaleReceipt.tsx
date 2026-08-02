@@ -14,7 +14,7 @@ interface Props {
 
 const COMPANY = {
   name: 'JABIMA FUNERAL DIRECTORS',
-  phone: '+254 XXX XXX XXX',
+  phone: '+254 711 747 433',
   email: 'info@jabima.co.ke',
   tagline: 'Honoring Life, Celebrating Memories',
   website: 'www.jabima.co.ke',

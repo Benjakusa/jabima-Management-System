@@ -17,7 +17,7 @@ const ProductReturns = () => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [tab, setTab] = useState<'transfer' | 'receive'>('transfer');
-    const [transferForm, setTransferForm] = useState({ shop_inventory_ids: [] as string[], to_branch_id: '', notes: '' });
+    const [transferForm, setTransferForm] = useState({ shop_inventory_ids: [] as string[], destination: '', notes: '' });
 
     const { data: myBranch, isLoading: loadingBranch } = useQuery({
         queryKey: ['my-profile-branch', user?.id],
@@ -78,16 +78,27 @@ const ProductReturns = () => {
 
     const sendTransferMutation = useMutation({
         mutationFn: async () => {
-            if (transferForm.shop_inventory_ids.length === 0 || !transferForm.to_branch_id) throw new Error('Select at least one product and destination branch');
+            if (transferForm.shop_inventory_ids.length === 0 || !transferForm.destination) throw new Error('Select at least one product and destination');
             if (!branchId) throw new Error('You must be assigned to a branch');
 
             const selectedItems = (myBranchInventory || []).filter((i: any) => transferForm.shop_inventory_ids.includes(i.id));
             if (selectedItems.length === 0) throw new Error('No valid products selected');
 
+            let to_branch_id = null;
+            let destination_type = 'branch';
+            if (transferForm.destination === 'warehouse') {
+                destination_type = 'warehouse';
+            } else if (transferForm.destination === 'workshop') {
+                destination_type = 'workshop';
+            } else {
+                to_branch_id = transferForm.destination;
+            }
+
             const records = selectedItems.map((item: any) => ({
                 finished_product_id: item.finished_product_id,
                 from_branch_id: branchId,
-                to_branch_id: transferForm.to_branch_id,
+                to_branch_id: to_branch_id,
+                destination_type: destination_type,
                 quantity: 1,
                 initiated_by: user?.id,
                 status: 'in_transit' as const,
@@ -105,7 +116,7 @@ const ProductReturns = () => {
         },
         onSuccess: () => {
             toast({ title: `${transferForm.shop_inventory_ids.length} product(s) transferred!` });
-            setTransferForm({ shop_inventory_ids: [], to_branch_id: '', notes: '' });
+            setTransferForm({ shop_inventory_ids: [], destination: '', notes: '' });
             queryClient.invalidateQueries({ queryKey: ['incoming-interbranch-transfers'] });
             queryClient.invalidateQueries({ queryKey: ['my-branch-inventory'] });
         },
@@ -129,6 +140,13 @@ const ProductReturns = () => {
                 transferred_by: user?.id,
             });
             if (invErr) throw invErr;
+
+            const { error: fpErr } = await supabase.from('finished_products').update({
+                branch_id: branchId,
+                status: 'completed',
+                location: 'branch'
+            }).eq('id', transfer.finished_product_id);
+            if (fpErr) throw fpErr;
         },
         onSuccess: () => {
             toast({ title: 'Transfer received — product added to your branch' });
@@ -268,20 +286,24 @@ const ProductReturns = () => {
                                         )}
                                     </div>
                                     <div className="space-y-1">
-                                        <Label className="text-xs">Destination Branch *</Label>
-                                        <select value={transferForm.to_branch_id} onChange={(e) => setTransferForm(f => ({ ...f, to_branch_id: e.target.value }))}
+                                        <Label className="text-xs">Destination *</Label>
+                                        <select value={transferForm.destination} onChange={(e) => setTransferForm(f => ({ ...f, destination: e.target.value }))}
                                             className="w-full h-11 rounded-lg border border-input bg-background px-3 text-sm" required>
-                                            <option value="">Select branch...</option>
-                                            {(branches || []).filter((b: any) => b.id !== branchId).map((b: any) => (
-                                                <option key={b.id} value={b.id}>{b.name}</option>
-                                            ))}
+                                            <option value="">Select destination...</option>
+                                            <option value="warehouse">Main Warehouse</option>
+                                            <option value="workshop">Workshop</option>
+                                            <optgroup label="Branches">
+                                                {(branches || []).filter((b: any) => b.id !== branchId).map((b: any) => (
+                                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                                ))}
+                                            </optgroup>
                                         </select>
                                     </div>
                                     <div className="space-y-1">
                                         <Label className="text-xs">Notes</Label>
                                         <Textarea value={transferForm.notes} onChange={(e) => setTransferForm(f => ({ ...f, notes: e.target.value }))} placeholder="Transfer reason..." className="min-h-[50px] text-sm" />
                                     </div>
-                                    <Button onClick={() => sendTransferMutation.mutate()} disabled={sendTransferMutation.isPending || transferForm.shop_inventory_ids.length === 0 || !transferForm.to_branch_id} className="w-full gap-1 text-xs" size="lg">
+                                    <Button onClick={() => sendTransferMutation.mutate()} disabled={sendTransferMutation.isPending || transferForm.shop_inventory_ids.length === 0 || !transferForm.destination} className="w-full gap-1 text-xs" size="lg">
                                         {sendTransferMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                                         Send Transfer ({transferForm.shop_inventory_ids.length} product{transferForm.shop_inventory_ids.length !== 1 ? 's' : ''})
                                     </Button>

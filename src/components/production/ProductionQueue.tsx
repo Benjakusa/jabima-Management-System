@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Eye, Factory, Loader2, AlertCircle } from 'lucide-react';
+import { Eye, Factory, Loader2, AlertCircle, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
@@ -28,13 +28,26 @@ const ProductionQueue = ({ onViewProduct }: ProductionQueueProps) => {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('production_orders')
-                .select('*')
+                .select('*, tasks:wp_production_tasks(assigned_officer_id, status)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
             return data || [];
         },
     });
+
+    const { data: profiles } = useQuery({
+        queryKey: ['all-profiles'],
+        queryFn: async () => {
+            const { data } = await supabase.from('profiles').select('user_id, full_name');
+            return data || [];
+        },
+    });
+
+    const getOfficerName = (officerId: string | null) => {
+        if (!officerId) return null;
+        return profiles?.find(p => p.user_id === officerId)?.full_name || null;
+    };
 
     if (isLoading) {
         return (
@@ -73,7 +86,10 @@ const ProductionQueue = ({ onViewProduct }: ProductionQueueProps) => {
                 </Card>
             ) : (
                 <div className="grid gap-3">
-                    {activeOrders.map((order) => (
+                    {activeOrders.map((order) => {
+                        const activeTask = order.tasks?.find((t: any) => t.status === 'In Progress');
+                        const officerName = getOfficerName(activeTask?.assigned_officer_id || null);
+                        return (
                         <Card key={order.id} className="hover:border-primary/50 transition-colors cursor-pointer group" onClick={() => onViewProduct(order.id)}>
                             <CardContent className="p-4 sm:p-5 flex items-center justify-between gap-4">
                                 <div className="flex-1 min-w-0">
@@ -95,9 +111,17 @@ const ProductionQueue = ({ onViewProduct }: ProductionQueueProps) => {
                                         <span className="truncate">System Order</span>
                                     </div>
 
-                                    <div className="mt-3 inline-flex items-center text-xs font-medium bg-primary/10 text-primary px-2.5 py-1 rounded-full">
-                                        <Factory className="h-3 w-3 mr-1.5" />
-                                        {typeof order.current_stage === 'number' ? getStageLabel(order.current_stage) : String(order.current_stage).replace(/_/g, ' ')}
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <div className="inline-flex items-center text-xs font-medium bg-primary/10 text-primary px-2.5 py-1 rounded-full">
+                                            <Factory className="h-3 w-3 mr-1.5" />
+                                            {typeof order.current_stage === 'number' ? getStageLabel(order.current_stage) : String(order.current_stage).replace(/_/g, ' ')}
+                                        </div>
+                                        {officerName && (
+                                            <div className="inline-flex items-center text-xs font-medium bg-secondary text-secondary-foreground px-2.5 py-1 rounded-full border">
+                                                <User className="h-3 w-3 mr-1.5" />
+                                                {officerName}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -106,7 +130,7 @@ const ProductionQueue = ({ onViewProduct }: ProductionQueueProps) => {
                                 </Button>
                             </CardContent>
                         </Card>
-                    ))}
+                    )})}
                 </div>
             )}
         </div>
