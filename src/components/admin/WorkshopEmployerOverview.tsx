@@ -3,45 +3,96 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Factory, Activity, CheckCircle, Clock, User, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { STAGES } from '@/components/production/ProductionPipeline';
 
-const STAGES_DEF = [
-    { num: 1, name: 'Frame/Body' },
-    { num: 2, name: 'Sanding/Paint' },
-    { num: 3, name: 'Cloth/Lining' },
-    { num: 4, name: 'Glass/Finish' }
-];
+// Map stage values to display index so we can calculate progress
+const STAGE_VALUES = STAGES.map(s => s.value);
 
 const WorkshopEmployerOverview = () => {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Fetch all currently active production orders
     const { data: liveOrders, isLoading } = useQuery({
         queryKey: ['admin-workshop-live'],
         queryFn: async () => {
-            // Get all currently active production orders
-            const { data: orders } = await supabase.from('production_orders')
-                .select(`id, product_type, created_at, status`)
+            const { data: orders, error: ordersError } = await supabase
+                .from('production_orders')
+                .select('id, product_type, product_code, batch_number, current_stage, created_at, started_at')
                 .eq('status', 'in_production')
-                .order('created_at', { ascending: false });
+                .order('started_at', { ascending: false });
 
+            if (ordersError) throw ordersError;
             if (!orders || orders.length === 0) return [];
 
             const orderIds = orders.map(o => o.id);
 
-            // Fetch stages and tasks for these orders
-            const [stagesRes, tasksRes] = await Promise.all([
-                supabase.from('wp_production_stages' as any).select('*').in('order_id', orderIds),
-                supabase.from('wp_production_tasks' as any)
-                    .select('*')
-                    .in('order_id', orderIds)
-            ]);
+            // Fetch active stage logs (worker currently working — no completed_at yet)
+            const { data: activeLogs } = await supabase
+                .from('stage_logs')
+                .select('id, production_order_id, stage, worker_id, started_at')
+                .in('production_order_id', orderIds)
+                .is('completed_at', null);
 
-            return orders.map(order => ({
-                ...order,
-                stages: stagesRes.data?.filter(s => s.order_id === order.id) || [],
-                tasks: tasksRes.data?.filter(t => t.order_id === order.id) || []
-            }));
+            // Fetch worker profiles for active workers
+            const activeWorkerIds = [...new Set((activeLogs || []).map(l => l.worker_id))];
+            let profiles: { user_id: string; full_name: string }[] = [];
+            if (activeWorkerIds.length > 0) {
+                const { data: prof } = await supabase
+                    .from('profiles')
+                    .select('user_id, full_name')
+                    .in('user_id', activeWorkerIds);
+                profiles = prof || [];
+            }
+
+            return orders.map(order => {
+                const orderLogs = (activeLogs || []).filter(l => l.production_order_id === order.id);
+                const stageIdx = STAGE_VALUES.indexOf(order.current_stage);
+                // Progress = stages already past (index-based) / total stages
+                const progress = stageIdx >= 0 ? Math.round((stageIdx / STAGES.length) * 100) : 0;
+
+                const activeWorkers = orderLogs.map(log => {
+                    const profile = profiles.find(p => p.user_id === log.worker_id);
+                    return { name: profile?.full_name || 'Worker', stage: log.stage };
+                });
+
+                return {
+                    ...order,
+                    stageIdx,
+                    progress,
+                    activeWorkers,
+                    isActive: orderLogs.length > 0,
+                };
+            });
         },
-        refetchInterval: 30000 // Refetch every 30 seconds for live updates
+        refetchInterval: 30000,
+    });
+
+    // Count of orders completed today
+    const { data: completedTodayCount } = useQuery({
+        queryKey: ['admin-workshop-completed-today', today],
+        queryFn: async () => {
+            const { count } = await supabase
+                .from('production_orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'completed')
+                .gte('completed_at', today);
+            return count || 0;
+        },
+        refetchInterval: 30000,
+    });
+
+    // Total completed all time
+    const { data: totalCompletedCount } = useQuery({
+        queryKey: ['admin-workshop-total-completed'],
+        queryFn: async () => {
+            const { count } = await supabase
+                .from('production_orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'completed');
+            return count || 0;
+        },
+        refetchInterval: 60000,
     });
 
     if (isLoading) {
@@ -55,6 +106,9 @@ const WorkshopEmployerOverview = () => {
         );
     }
 
+    const inProductionCount = liveOrders?.length || 0;
+    const activeWorkerCount = (liveOrders || []).filter(o => o.isActive).length;
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -64,6 +118,28 @@ const WorkshopEmployerOverview = () => {
                 <Badge variant="secondary" className="bg-primary/10 text-primary">
                     <Activity className="h-3 w-3 mr-1 animate-pulse" /> Live Now
                 </Badge>
+            </div>
+
+            {/* Summary stats row */}
+            <div className="grid grid-cols-3 gap-3">
+                <Card className="border">
+                    <CardContent className="p-3 text-center">
+                        <p className="text-2xl font-bold font-display text-foreground">{inProductionCount}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">In Production</p>
+                    </CardContent>
+                </Card>
+                <Card className="border">
+                    <CardContent className="p-3 text-center">
+                        <p className="text-2xl font-bold font-display text-success">{completedTodayCount ?? 0}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Done Today</p>
+                    </CardContent>
+                </Card>
+                <Card className="border">
+                    <CardContent className="p-3 text-center">
+                        <p className="text-2xl font-bold font-display text-primary">{totalCompletedCount ?? 0}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Total Done</p>
+                    </CardContent>
+                </Card>
             </div>
 
             {!liveOrders || liveOrders.length === 0 ? (
@@ -76,21 +152,22 @@ const WorkshopEmployerOverview = () => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {liveOrders.map(order => {
-                        // Count completed vs total to show progress
-                        const stagesCount = order.stages.length > 0 ? order.stages.length : STAGES_DEF.length;
-                        const completedCount = order.stages.filter((s: any) => s.status === 'Completed').length;
-                        const progress = (completedCount / stagesCount) * 100;
-                        const activeTasks = order.tasks.filter((t: any) => t.status === 'In Progress');
+                        const currentStage = STAGES.find(s => s.value === order.current_stage);
 
                         return (
                             <Card key={order.id} className="border shadow-sm overflow-hidden flex flex-col">
                                 <CardHeader className="p-4 bg-muted/10 border-b pb-3">
                                     <div className="flex justify-between items-start mb-2">
                                         <div>
-                                            <CardTitle className="text-base truncate max-w-[200px]" title={order.product_type}>{order.product_type}</CardTitle>
-                                            <p className="text-xs text-muted-foreground font-mono mt-0.5">Ref: {order.id.slice(0, 8).toUpperCase()}</p>
+                                            <CardTitle className="text-base truncate max-w-[200px]" title={order.product_type}>
+                                                {order.product_type}
+                                            </CardTitle>
+                                            <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                                                {order.product_code ? order.product_code : `Ref: ${order.id.slice(0, 8).toUpperCase()}`}
+                                                {order.batch_number && ` · ${order.batch_number}`}
+                                            </p>
                                         </div>
-                                        {activeTasks.length > 0 ? (
+                                        {order.isActive ? (
                                             <Badge variant="outline" className="bg-accent/40 text-primary border-primary/20 whitespace-nowrap">
                                                 <Activity className="h-3 w-3 mr-1 animate-spin-slow" /> Active
                                             </Badge>
@@ -101,52 +178,64 @@ const WorkshopEmployerOverview = () => {
                                         )}
                                     </div>
 
-                                    {/* Progress Bar Container */}
+                                    {/* Progress bar: based on current stage index */}
                                     <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden mt-1">
-                                        <div className="h-full bg-primary transition-all duration-500 ease-in-out" style={{ width: `${order.stages.length === 0 ? 0 : progress}%` }} />
+                                        <div
+                                            className="h-full bg-primary transition-all duration-500 ease-in-out"
+                                            style={{ width: `${order.progress}%` }}
+                                        />
                                     </div>
                                 </CardHeader>
 
                                 <CardContent className="p-4 flex-1 flex flex-col gap-3">
-                                    {order.stages.length === 0 ? (
-                                        <div className="flex-1 flex flex-col items-center justify-center text-center p-2 text-muted-foreground">
-                                            <AlertCircle className="h-6 w-6 mb-1 opacity-50" />
-                                            <p className="text-xs">Stages not initialized</p>
-                                        </div>
-                                    ) : (
-                                        <div className="flex gap-1 h-full">
-                                            {STAGES_DEF.map(def => {
-                                                const stageData = order.stages.find((s: any) => s.stage_number === def.num);
-                                                const isCompleted = stageData?.status === 'Completed';
-                                                // Find if there is an active worker on this stage
-                                                const stageTask = order.tasks.find((t: any) => t.stage_id === stageData?.id);
-                                                const isWorking = stageTask?.status === 'In Progress';
-
-                                                return (
-                                                    <div key={def.num} className={cn(
-                                                        "flex-1 flex flex-col items-center justify-center text-center p-2 rounded-lg border",
-                                                        isCompleted ? "bg-success/5 border-success/20 text-success"
-                                                            : isWorking ? "bg-primary/5 border-primary/30 shadow-[inset_0_0_10px_rgba(var(--primary),0.1)]"
-                                                                : "bg-muted/10 border-transparent text-muted-foreground opacity-60"
-                                                    )}>
-                                                        <div className="text-[10px] uppercase font-semibold leading-tight line-clamp-2 h-7">{def.name}</div>
-                                                        {isCompleted ? (
-                                                            <CheckCircle className="h-4 w-4 mt-1.5 text-success" />
-                                                        ) : isWorking ? (
-                                                            <div className="mt-1.5 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center" title={stageTask?.assigned_officer?.full_name}>
-                                                                <User className="h-3 w-3 text-primary" />
-                                                            </div>
-                                                        ) : (
-                                                            <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
-                                                        )}
-                                                        {isWorking && (
-                                                            <p className="text-[9px] mt-1 text-primary w-full truncate px-1">
-                                                                Working...
-                                                            </p>
-                                                        )}
+                                    {/* Stage indicator pills */}
+                                    <div className="flex gap-1 h-full">
+                                        {STAGES.map((stage, i) => {
+                                            const isPast = i < order.stageIdx;
+                                            const isCurrent = i === order.stageIdx;
+                                            return (
+                                                <div
+                                                    key={stage.value}
+                                                    className={cn(
+                                                        'flex-1 flex flex-col items-center justify-center text-center p-2 rounded-lg border',
+                                                        isPast
+                                                            ? 'bg-success/5 border-success/20 text-success'
+                                                            : isCurrent
+                                                                ? 'bg-primary/5 border-primary/30 shadow-[inset_0_0_10px_rgba(var(--primary),0.1)]'
+                                                                : 'bg-muted/10 border-transparent text-muted-foreground opacity-60'
+                                                    )}
+                                                >
+                                                    <div className="text-[10px] uppercase font-semibold leading-tight line-clamp-2 h-7">
+                                                        {stage.label}
                                                     </div>
-                                                );
-                                            })}
+                                                    {isPast ? (
+                                                        <CheckCircle className="h-4 w-4 mt-1.5 text-success" />
+                                                    ) : isCurrent ? (
+                                                        <div className="mt-1.5 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
+                                                            <User className="h-3 w-3 text-primary" />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
+                                                    )}
+                                                    {isCurrent && order.isActive && (
+                                                        <p className="text-[9px] mt-1 text-primary w-full truncate px-1">
+                                                            Working...
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Active workers on this order */}
+                                    {order.activeWorkers.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border/50">
+                                            {order.activeWorkers.map((w, i) => (
+                                                <Badge key={i} variant="secondary" className="text-[10px] gap-1">
+                                                    <User className="h-2.5 w-2.5" />
+                                                    {w.name}
+                                                </Badge>
+                                            ))}
                                         </div>
                                     )}
                                 </CardContent>

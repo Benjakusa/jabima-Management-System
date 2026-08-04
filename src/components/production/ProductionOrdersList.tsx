@@ -21,6 +21,14 @@ interface Props {
   onViewProduct: (id: string) => void;
 }
 
+interface BatchLine {
+  product_type: string;
+  custom_name: string;
+  quantity: string;
+}
+
+const emptyBatchLine: BatchLine = { product_type: '', custom_name: '', quantity: '1' };
+
 const generateBatchNumber = async (): Promise<string> => {
   const year = new Date().getFullYear();
   const { count, error } = await supabase
@@ -34,9 +42,7 @@ const generateBatchNumber = async (): Promise<string> => {
 
 const ProductionOrdersList = ({ onViewProduct }: Props) => {
   const [showForm, setShowForm] = useState(false);
-  const [productType, setProductType] = useState('');
-  const [customType, setCustomType] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [lines, setLines] = useState<BatchLine[]>([{ ...emptyBatchLine }]);
   const [batchNumber, setBatchNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [expectedDate, setExpectedDate] = useState('');
@@ -81,15 +87,21 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const type = productType === 'Custom Order' ? customType.trim() : productType;
-      if (!type) throw new Error('Product type is required');
-      const qty = parseInt(quantity) || 1;
-      if (qty < 1 || qty > 100) throw new Error('Quantity must be between 1 and 100');
+      for (const line of lines) {
+        const type = line.product_type.trim();
+        if (!type) throw new Error('Every product line requires a product type');
+        const qty = parseInt(line.quantity);
+        if (isNaN(qty) || qty < 1 || qty > 100) throw new Error('Quantity must be between 1 and 100 for every product line');
+      }
       if (!batchNumber) throw new Error('Batch number is required');
 
-      const { data, error } = await supabase.rpc('create_production_batch', {
-        p_product_type: type,
-        p_quantity: qty,
+      const { data, error } = await supabase.rpc('create_production_batch_multi', {
+        p_items: lines.map(line => ({
+          product_type: line.product_type === 'Custom Order'
+            ? line.custom_name.trim()
+            : line.product_type.trim(),
+          quantity: parseInt(line.quantity) || 1,
+        })),
         p_batch_number: batchNumber,
         p_notes: notes.trim() || null,
         p_expected_completion_date: expectedDate || null,
@@ -101,9 +113,7 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
     onSuccess: (data) => {
       const count = Array.isArray(data) ? data.length : 1;
       toast({ title: `${count} production order${count > 1 ? 's' : ''} created`, description: `Batch: ${batchNumber}` });
-      setProductType('');
-      setCustomType('');
-      setQuantity('1');
+      setLines([{ ...emptyBatchLine }]);
       setBatchNumber('');
       setNotes('');
       setExpectedDate('');
@@ -185,6 +195,26 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
     });
   };
 
+  // ── Multi-line batch helpers ────────────────────────────────────────────────
+  const addLine = () => setLines(ls => [...ls, { ...emptyBatchLine }]);
+
+  const removeLine = (idx: number) =>
+    setLines(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls);
+
+  const updateLine = (idx: number, patch: Partial<BatchLine>) =>
+    setLines(ls => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+
+  const areLinesValid =
+    lines.length > 0 &&
+    lines.every(l => {
+      const type = l.product_type.trim();
+      const qty = parseInt(l.quantity);
+      return type !== '' && !isNaN(qty) && qty >= 1 && qty <= 100;
+    });
+
+  const totalLineQty = lines.reduce((sum, l) => sum + (parseInt(l.quantity) || 0), 0);
+
+
   const filtered = (orders || []).filter(o => {
     const matchesSearch = o.product_type.toLowerCase().includes(search.toLowerCase()) ||
       o.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -218,34 +248,72 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
           </CardHeader>
           <CardContent>
             <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Product Type *</Label>
-                <Input value={productType === 'Custom Order' ? customType : productType}
-                  onChange={(e) => { setProductType('Custom Order'); setCustomType(e.target.value); }}
-                  placeholder="Type product type name..."
-                  className="h-12" list="product-type-suggestions" />
-                <datalist id="product-type-suggestions">
-                  {productTypes.filter(t => t !== 'Custom Order').map(type => (
-                    <option key={type} value={type} />
-                  ))}
-                </datalist>
-                <p className="text-[10px] text-muted-foreground">Type a name or pick from suggestions below</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {productTypes.filter(t => t !== 'Custom Order').map(type => (
-                    <button key={type} type="button" onClick={() => { setProductType(type); setCustomType(''); }}
-                      className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors",
-                        productType === type && !customType ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
-                      )}>{type}</button>
-                  ))}
-                </div>
+
+              {/* ── Multi-product lines (one batch, several products) ── */}
+              <div className="space-y-3">
+                <Label>Products in this Batch</Label>
+                {lines.map((line, idx) => (
+                  <div key={idx} className="border rounded-xl p-3 space-y-2 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <Label>Product {idx + 1}</Label>
+                      {lines.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-destructive hover:text-destructive"
+                          onClick={() => removeLine(idx)}
+                        >
+                          <X className="h-3.5 w-3.5" /> Remove
+                        </Button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Input value={line.product_type === 'Custom Order' ? line.custom_name : line.product_type}
+                        onChange={(e) => updateLine(idx, { product_type: 'Custom Order', custom_name: e.target.value })}
+                        placeholder="Type product type name..."
+                        className="h-12" list="product-type-suggestions" />
+                      <datalist id="product-type-suggestions">
+                        {productTypes.filter(t => t !== 'Custom Order').map(type => (
+                          <option key={type} value={type} />
+                        ))}
+                      </datalist>
+                      <p className="text-[10px] text-muted-foreground">Type a name or pick from suggestions below</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {productTypes.filter(t => t !== 'Custom Order').map(type => (
+                          <button key={type} type="button" onClick={() => updateLine(idx, { product_type: type, custom_name: '' })}
+                            className={cn("px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors",
+                              line.product_type === type && !line.custom_name ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-accent"
+                            )}>{type}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {line.product_type === 'Custom Order' && (
+                      <div className="space-y-2">
+                        <Label>Custom Product Name</Label>
+                        <Input
+                          value={line.custom_name}
+                          onChange={(e) => updateLine(idx, { custom_name: e.target.value })}
+                          placeholder="Enter custom product name"
+                          className="h-12"
+                          required
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <Label>Quantity</Label>
+                      <Input type="number" min="1" max="100" value={line.quantity} onChange={(e) => updateLine(idx, { quantity: e.target.value })} placeholder="How many?" />
+                      <p className="text-[10px] text-muted-foreground">Each gets a unique ID</p>
+                    </div>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" className="w-full" onClick={addLine}>
+                  <Plus className="h-4 w-4 mr-2" /> Add Another Product
+                </Button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label>Quantity</Label>
-                  <Input type="number" min="1" max="100" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="How many?" />
-                  <p className="text-[10px] text-muted-foreground">Each gets a unique ID</p>
-                </div>
+              {/* ── Shared batch settings ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Size</Label>
                   <select value={size} onChange={(e) => setSize(e.target.value)}
@@ -284,9 +352,9 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions, client details, etc." maxLength={500} className="min-h-[60px]" />
               </div>
 
-              <Button type="submit" size="lg" className="w-full" disabled={createMutation.isPending || !productType || (productType === 'Custom Order' && !customType.trim())}>
+              <Button type="submit" size="lg" className="w-full" disabled={createMutation.isPending || !areLinesValid}>
                 {createMutation.isPending ? <Loader2 className="animate-spin" /> : <Package className="h-4 w-4" />}
-                Create {parseInt(quantity) > 1 ? `${quantity} Orders` : 'Order'}
+                Create {totalLineQty > 1 ? `${totalLineQty} Orders` : 'Order'}
               </Button>
             </form>
           </CardContent>
