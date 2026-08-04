@@ -101,3 +101,17 @@ To create a production build:
 npm run build
 ```
 The optimized assets will be generated in the `dist` directory, ready to be deployed to Vercel, Netlify, or any static hosting provider.
+
+---
+
+## License & Copyright
+
+**PROPRIETARY AND CONFIDENTIAL**
+
+This software and its documentation are the proprietary property of **Jabima Funeral Directors** and **OpenDesk Infodigital**.
+
+- **Lead Software Developer:** Benard Oloo Ochieng
+- **Organization:** OpenDesk Infodigital
+- **Phone:** +254 722 839 617
+
+Unauthorized copying, distribution, modification, or use of this software, via any medium, is strictly prohibited. See the `LICENSE` file in the root directory for full details.
