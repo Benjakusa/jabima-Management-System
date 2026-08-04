@@ -34,6 +34,15 @@ interface ExternalForm {
     notes: string;
 }
 
+interface ExternalLine {
+    product_type: string;
+    custom_name: string;
+    quantity: string;
+    purchase_price: string;
+    supplier_name: string;
+    notes: string;
+}
+
 const emptyWorkshop: WorkshopForm = {
     product_type: '', custom_name: '', batch_number: '', production_cost: '0', location: 'main_warehouse', branch_id: '',
 };
@@ -41,6 +50,10 @@ const emptyWorkshop: WorkshopForm = {
 const emptyExternal: ExternalForm = {
     product_type: 'Custom Order', custom_name: '', batch_number: '', purchase_price: '0', supplier_name: '', quantity: '1',
     location: 'main_warehouse', branch_id: '', notes: '',
+};
+
+const emptyLine: ExternalLine = {
+    product_type: '', custom_name: '', quantity: '1', purchase_price: '0', supplier_name: '', notes: '',
 };
 
 // ─── Coffin types ────────────────────────────────────────────────────────────
@@ -55,6 +68,9 @@ const FinishedProductsList = () => {
     const [editId, setEditId] = useState<string | null>(null);
     const [workshopForm, setWorkshopForm] = useState<WorkshopForm>(emptyWorkshop);
     const [externalForm, setExternalForm] = useState<ExternalForm>(emptyExternal);
+    const [externalLines, setExternalLines] = useState<ExternalLine[]>([{ ...emptyLine }]);
+    const [addLocation, setAddLocation] = useState('main_warehouse');
+    const [addBranchId, setAddBranchId] = useState('');
     const [search, setSearch] = useState('');
     const [filterType, setFilterType] = useState('');
     const [filterSource, setFilterSource] = useState<'' | 'workshop' | 'external'>('');
@@ -96,30 +112,66 @@ const FinishedProductsList = () => {
     const saveMutation = useMutation({
         mutationFn: async () => {
             if (mode === 'external') {
-                const qty = parseInt(externalForm.quantity) || 1;
-                const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2);
-                const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
-                const baseBatch = `EXT-${dateStr}-${randomStr}`;
-                const finalType = externalForm.product_type === 'Custom Order' 
-                    ? externalForm.custom_name.trim() 
-                    : externalForm.product_type;
-                const rows = Array.from({ length: qty }, (_, i): any => ({
-                    product_type: finalType,
-                    production_cost: 0,
-                    branch_id: externalForm.branch_id || null,
-                    status: 'completed',
-                    completed_at: new Date().toISOString(),
-                    location: externalForm.location || 'main_warehouse',
-                    purchase_price: parseFloat(externalForm.purchase_price) || 0,
-                    supplier_name: externalForm.supplier_name.trim() || null,
-                    notes: externalForm.notes.trim() || null,
-                    batch_number: qty === 1 ? baseBatch : `${baseBatch}-${i + 1}`,
-                }));
-
                 if (editId) {
+                    const qty = parseInt(externalForm.quantity) || 1;
+                    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2);
+                    const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
+                    const baseBatch = `EXT-${dateStr}-${randomStr}`;
+                    const finalType = externalForm.product_type === 'Custom Order'
+                        ? externalForm.custom_name.trim()
+                        : externalForm.product_type;
+                    const rows = Array.from({ length: qty }, (_, i): any => ({
+                        product_type: finalType,
+                        production_cost: 0,
+                        branch_id: externalForm.branch_id || null,
+                        status: 'completed',
+                        completed_at: new Date().toISOString(),
+                        location: externalForm.location || 'main_warehouse',
+                        purchase_price: parseFloat(externalForm.purchase_price) || 0,
+                        supplier_name: externalForm.supplier_name.trim() || null,
+                        notes: externalForm.notes.trim() || null,
+                        batch_number: qty === 1 ? baseBatch : `${baseBatch}-${i + 1}`,
+                    }));
+
                     const { error } = await supabase.from('finished_products').update(rows[0]).eq('id', editId);
                     if (error) throw error;
                 } else {
+                    // Validate every product line BEFORE saving to prevent partial saves.
+                    for (const line of externalLines) {
+                        const typeValid =
+                            line.product_type.trim() !== '' &&
+                            (line.product_type !== 'Custom Order' || line.custom_name.trim() !== '');
+                        const qty = parseInt(line.quantity);
+                        if (!typeValid) throw new Error('Every product line requires a product name');
+                        if (isNaN(qty) || qty < 1) throw new Error('Quantity must be at least 1 for every product line');
+                    }
+
+                    const rows: any[] = [];
+                    externalLines.forEach(line => {
+                        const qty = parseInt(line.quantity) || 1;
+                        const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2);
+                        const randomStr = Math.random().toString(36).substring(2, 5).toUpperCase();
+                        const baseBatch = `EXT-${dateStr}-${randomStr}`;
+                        const finalType = line.product_type === 'Custom Order'
+                            ? line.custom_name.trim()
+                            : line.product_type;
+                        for (let i = 0; i < qty; i++) {
+                            rows.push({
+                                product_type: finalType,
+                                production_cost: 0,
+                                branch_id: addBranchId || null,
+                                status: 'completed',
+                                completed_at: new Date().toISOString(),
+                                location: addLocation || 'main_warehouse',
+                                purchase_price: parseFloat(line.purchase_price) || 0,
+                                supplier_name: line.supplier_name.trim() || null,
+                                notes: line.notes.trim() || null,
+                                batch_number: qty === 1 ? baseBatch : `${baseBatch}-${i + 1}`,
+                            });
+                        }
+                    });
+
+                    // Single insert statement = single atomic transaction (all or nothing).
                     const { error } = await supabase.from('finished_products').insert(rows);
                     if (error) throw error;
                 }
@@ -148,9 +200,13 @@ const FinishedProductsList = () => {
             }
         },
         onSuccess: () => {
-            const qty = mode === 'external' ? parseInt(externalForm.quantity) || 1 : 1;
+            const qty = mode === 'external'
+                ? (editId
+                    ? (parseInt(externalForm.quantity) || 1)
+                    : externalLines.reduce((sum, l) => sum + (parseInt(l.quantity) || 0), 0))
+                : 1;
             toast({
-                title: editId ? 'Product updated' : `${qty} coffin${qty !== 1 ? 's' : ''} added to inventory`,
+                title: editId ? 'Product updated' : `${qty} product${qty !== 1 ? 's' : ''} added to inventory`,
                 description: mode === 'external' ? 'External stock recorded successfully.' : undefined,
             });
             resetForm();
@@ -180,9 +236,20 @@ const FinishedProductsList = () => {
     const resetForm = () => {
         setWorkshopForm(emptyWorkshop);
         setExternalForm(emptyExternal);
+        setExternalLines([{ ...emptyLine }]);
+        setAddLocation('main_warehouse');
+        setAddBranchId('');
         setEditId(null);
         setShowForm(false);
     };
+
+    const addLine = () => setExternalLines(ls => [...ls, { ...emptyLine }]);
+
+    const updateLine = (idx: number, patch: Partial<ExternalLine>) =>
+        setExternalLines(ls => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+
+    const removeLine = (idx: number) =>
+        setExternalLines(ls => (ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls));
 
     const startEdit = (product: any) => {
         const src: SourceMode = (product.source_type === 'external' || (!product.source_type && product.purchase_price && !product.production_cost)) ? 'external' : 'workshop';
@@ -231,6 +298,16 @@ const FinishedProductsList = () => {
         externalForm.product_type.trim() !== '' &&
         (externalForm.product_type !== 'Custom Order' || externalForm.custom_name.trim() !== '') &&
         parseInt(externalForm.quantity) >= 1;
+
+    const areAllLinesValid =
+        externalLines.length > 0 &&
+        externalLines.every(l =>
+            l.product_type.trim() !== '' &&
+            (l.product_type !== 'Custom Order' || l.custom_name.trim() !== '') &&
+            parseInt(l.quantity) >= 1
+        );
+
+    const totalLineQty = externalLines.reduce((sum, l) => sum + (parseInt(l.quantity) || 0), 0);
 
     const isWorkshopFormValid = 
         workshopForm.product_type.trim() !== '' &&
@@ -295,6 +372,134 @@ const FinishedProductsList = () => {
                     <CardContent>
                         <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="space-y-4">
 
+                            {/* ── Bulk multi-line editor: external add mode ── */}
+                            {mode === 'external' && !editId && (
+                                <>
+                                    <div className="space-y-3">
+                                        <Label>Products to Add</Label>
+                                        {externalLines.map((line, idx) => (
+                                            <div key={idx} className="border rounded-xl p-3 space-y-2 bg-muted/20">
+                                                <div className="flex items-center justify-between">
+                                                    <Label>Product {idx + 1}</Label>
+                                                    {externalLines.length > 1 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 text-destructive hover:text-destructive"
+                                                            onClick={() => removeLine(idx)}
+                                                        >
+                                                            <X className="h-3.5 w-3.5" /> Remove
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Input
+                                                        value={line.product_type}
+                                                        onChange={e => updateLine(idx, { product_type: e.target.value })}
+                                                        placeholder="Product name — e.g. Simple Coffin, Kupa, White Cloth"
+                                                        className="h-12"
+                                                        list="external-product-type-suggestions"
+                                                    />
+                                                    <datalist id="external-product-type-suggestions">
+                                                        {productTypes.filter(t => t !== 'Custom Order').map(t => (
+                                                            <option key={t} value={t} />
+                                                        ))}
+                                                    </datalist>
+                                                </div>
+                                                {line.product_type === 'Custom Order' && (
+                                                    <div className="space-y-2">
+                                                        <Label>Custom Product Name</Label>
+                                                        <Input
+                                                            value={line.custom_name}
+                                                            onChange={e => updateLine(idx, { custom_name: e.target.value })}
+                                                            placeholder="Enter custom product name"
+                                                            className="h-12"
+                                                            required
+                                                        />
+                                                    </div>
+                                                )}
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div className="space-y-1">
+                                                        <Label>Quantity</Label>
+                                                        <Input
+                                                            type="number"
+                                                            min="1"
+                                                            value={line.quantity}
+                                                            onChange={e => updateLine(idx, { quantity: e.target.value })}
+                                                            placeholder="How many?"
+                                                            className="h-12"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <Label>Purchase Price (Ksh)</Label>
+                                                        <Input
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.01"
+                                                            value={line.purchase_price}
+                                                            onChange={e => updateLine(idx, { purchase_price: e.target.value })}
+                                                            placeholder="Unit price"
+                                                            className="h-12"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label>Supplier (optional)</Label>
+                                                    <Input
+                                                        value={line.supplier_name}
+                                                        onChange={e => updateLine(idx, { supplier_name: e.target.value })}
+                                                        placeholder="e.g. Nairobi Casket Supplies"
+                                                        className="h-12"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label>Notes (optional)</Label>
+                                                    <Input
+                                                        value={line.notes}
+                                                        onChange={e => updateLine(idx, { notes: e.target.value })}
+                                                        placeholder="Optional notes for these items"
+                                                        className="h-12"
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <Button type="button" variant="outline" size="sm" className="w-full" onClick={addLine}>
+                                            <Plus className="h-4 w-4 mr-2" /> Add Another Product
+                                        </Button>
+                                    </div>
+
+                                    {/* Shared fields for the whole bulk addition */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Storage Location</Label>
+                                            <Input
+                                                value={addLocation}
+                                                onChange={e => setAddLocation(e.target.value)}
+                                                placeholder="e.g. Aisle 4, Shelf B"
+                                                className="h-12"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Branch (if assigned)</Label>
+                                            <select
+                                                value={addBranchId}
+                                                onChange={e => setAddBranchId(e.target.value)}
+                                                className="w-full h-12 rounded-lg border border-input bg-background px-3 text-sm"
+                                            >
+                                                <option value="">Main Warehouse / Unassigned</option>
+                                                {(branches || []).map(b => (
+                                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* ── Single product form: editing an external product or workshop mode ── */}
+                            {(mode === 'external' && editId) || mode === 'workshop' ? (
+                            <>
                             {/* Coffin type picker — shared */}
                             <div className="space-y-2">
                                 <Label>Coffin Type</Label>
@@ -404,6 +609,8 @@ const FinishedProductsList = () => {
                                     </div>
                                 </div>
                             )}
+                            </>
+                            ) : null}
 
                             <Button
                                 type="submit"
@@ -411,14 +618,16 @@ const FinishedProductsList = () => {
                                 className="w-full"
                                 disabled={
                                     saveMutation.isPending ||
-                                    (mode === 'external' ? !isExternalFormValid : !isWorkshopFormValid)
+                                    (mode === 'external'
+                                        ? (editId ? !isExternalFormValid : !areAllLinesValid)
+                                        : !isWorkshopFormValid)
                                 }
                             >
                                 {saveMutation.isPending && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
                                 {editId
                                     ? 'Update Product'
                                     : mode === 'external'
-                                        ? `Add ${externalForm.quantity || 1} Coffin${parseInt(externalForm.quantity) !== 1 ? 's' : ''} to Store`
+                                        ? `Add ${totalLineQty || 1} Product${totalLineQty !== 1 ? 's' : ''} to Store`
                                         : 'Add to Inventory'
                                 }
                             </Button>
