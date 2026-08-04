@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Factory, Package, RotateCcw, Wallet, FileText, Settings } from 'lucide-react';
+import { LogOut, LayoutDashboard, Factory, Package, RotateCcw, Wallet, FileText, RefreshCw } from 'lucide-react';
 import WorkshopOverview from './WorkshopOverview';
 import WorkshopTasks from './WorkshopTasks';
 import WorkshopMaterialRequests from './WorkshopMaterialRequests';
@@ -29,6 +30,16 @@ const tabs: { id: Tab; label: string; icon: any }[] = [
 const WorkerDashboard = () => {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const queryClient = useQueryClient();
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+    queryClient.invalidateQueries({ queryKey: ['my-stage-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['my-stage-logs'] });
+    queryClient.invalidateQueries({ queryKey: ['my-pending-requests'] });
+    queryClient.invalidateQueries({ queryKey: ['workshop-wallet'] });
+    queryClient.invalidateQueries({ queryKey: ['production-orders-list'] });
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20 lg:pb-4">
@@ -44,9 +55,19 @@ const WorkerDashboard = () => {
             <p className="text-[10px] lg:text-xs text-muted-foreground xs:hidden">{profile?.full_name?.split(' ')[0]}</p>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={signOut}>
-          <LogOut className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            title="Refresh dashboard data"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={signOut}>
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       {/* Main content - responsive container */}

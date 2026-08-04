@@ -1,24 +1,36 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Factory, Activity, CheckCircle, Clock, User, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Factory, Activity, CheckCircle, Clock, User, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { STAGES } from '@/components/production/ProductionPipeline';
 
-// Map stage values to display index so we can calculate progress
-const STAGE_VALUES = STAGES.map(s => s.value);
+// The 4 stages as stored by ProductionOrderDetail (integer 1-4)
+const STAGE_DEFS = [
+    { num: 1, label: 'Frame / Body', color: 'bg-amber-500' },
+    { num: 2, label: 'Sanding / Paint', color: 'bg-orange-500' },
+    { num: 3, label: 'Cloth / Lining', color: 'bg-emerald-500' },
+    { num: 4, label: 'Glass / Finish', color: 'bg-blue-500' },
+];
 
 const WorkshopEmployerOverview = () => {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const queryClient = useQueryClient();
+
+    const handleRefresh = () => {
+        queryClient.invalidateQueries({ queryKey: ['admin-workshop-live'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-workshop-completed-today'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-workshop-total-completed'] });
+    };
 
     // Fetch all currently active production orders
-    const { data: liveOrders, isLoading } = useQuery({
+    const { data: liveOrders, isLoading, isFetching } = useQuery({
         queryKey: ['admin-workshop-live'],
         queryFn: async () => {
             const { data: orders, error: ordersError } = await supabase
                 .from('production_orders')
-                .select('id, product_type, product_code, batch_number, current_stage, created_at, started_at')
+                .select('id, product_type, product_code, batch_number, current_stage, created_at, started_at, status')
                 .eq('status', 'in_production')
                 .order('started_at', { ascending: false });
 
@@ -27,15 +39,15 @@ const WorkshopEmployerOverview = () => {
 
             const orderIds = orders.map(o => o.id);
 
-            // Fetch active stage logs (worker currently working — no completed_at yet)
-            const { data: activeLogs } = await supabase
-                .from('stage_logs')
-                .select('id, production_order_id, stage, worker_id, started_at')
-                .in('production_order_id', orderIds)
-                .is('completed_at', null);
+            // Fetch active stage tasks (worker currently working — no completed_at yet)
+            const { data: activeTasks } = await supabase
+                .from('wp_production_tasks' as any)
+                .select('id, order_id, stage_name, assigned_officer_id, started_at, status')
+                .in('order_id', orderIds)
+                .eq('status', 'In Progress');
 
             // Fetch worker profiles for active workers
-            const activeWorkerIds = [...new Set((activeLogs || []).map(l => l.worker_id))];
+            const activeWorkerIds = [...new Set((activeTasks || []).map((t: any) => t.assigned_officer_id).filter(Boolean))];
             let profiles: { user_id: string; full_name: string }[] = [];
             if (activeWorkerIds.length > 0) {
                 const { data: prof } = await supabase
@@ -46,22 +58,26 @@ const WorkshopEmployerOverview = () => {
             }
 
             return orders.map(order => {
-                const orderLogs = (activeLogs || []).filter(l => l.production_order_id === order.id);
-                const stageIdx = STAGE_VALUES.indexOf(order.current_stage);
-                // Progress = stages already past (index-based) / total stages
-                const progress = stageIdx >= 0 ? Math.round((stageIdx / STAGES.length) * 100) : 0;
+                const orderTasks = (activeTasks || []).filter((t: any) => t.order_id === order.id);
+                // current_stage stored as integer 1-4
+                const stageNum = typeof order.current_stage === 'number'
+                    ? order.current_stage
+                    : parseInt(String(order.current_stage)) || 1;
+                const stageIdx = stageNum - 1; // 0-based index
+                const progress = Math.round((stageIdx / STAGE_DEFS.length) * 100);
 
-                const activeWorkers = orderLogs.map(log => {
-                    const profile = profiles.find(p => p.user_id === log.worker_id);
-                    return { name: profile?.full_name || 'Worker', stage: log.stage };
+                const activeWorkers = orderTasks.map((task: any) => {
+                    const profile = profiles.find(p => p.user_id === task.assigned_officer_id);
+                    return { name: profile?.full_name || 'Worker', stageName: task.stage_name };
                 });
 
                 return {
                     ...order,
                     stageIdx,
+                    stageNum,
                     progress,
                     activeWorkers,
-                    isActive: orderLogs.length > 0,
+                    isActive: orderTasks.length > 0,
                 };
             });
         },
@@ -107,7 +123,6 @@ const WorkshopEmployerOverview = () => {
     }
 
     const inProductionCount = liveOrders?.length || 0;
-    const activeWorkerCount = (liveOrders || []).filter(o => o.isActive).length;
 
     return (
         <div className="space-y-4">
@@ -115,9 +130,20 @@ const WorkshopEmployerOverview = () => {
                 <h3 className="font-display text-lg font-semibold text-foreground flex items-center gap-2">
                     <Factory className="h-5 w-5 text-primary" /> Live Workshop Overview
                 </h3>
-                <Badge variant="secondary" className="bg-primary/10 text-primary">
-                    <Activity className="h-3 w-3 mr-1 animate-pulse" /> Live Now
-                </Badge>
+                <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="bg-primary/10 text-primary">
+                        <Activity className="h-3 w-3 mr-1 animate-pulse" /> Live Now
+                    </Badge>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefresh}
+                        disabled={isFetching}
+                        className="h-8 px-2"
+                    >
+                        <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+                    </Button>
+                </div>
             </div>
 
             {/* Summary stats row */}
@@ -152,7 +178,7 @@ const WorkshopEmployerOverview = () => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {liveOrders.map(order => {
-                        const currentStage = STAGES.find(s => s.value === order.current_stage);
+                        const currentStageDef = STAGE_DEFS[order.stageIdx] || STAGE_DEFS[0];
 
                         return (
                             <Card key={order.id} className="border shadow-sm overflow-hidden flex flex-col">
@@ -169,7 +195,7 @@ const WorkshopEmployerOverview = () => {
                                         </div>
                                         {order.isActive ? (
                                             <Badge variant="outline" className="bg-accent/40 text-primary border-primary/20 whitespace-nowrap">
-                                                <Activity className="h-3 w-3 mr-1 animate-spin-slow" /> Active
+                                                <Activity className="h-3 w-3 mr-1" /> Active
                                             </Badge>
                                         ) : (
                                             <Badge variant="secondary" className="whitespace-nowrap">
@@ -178,7 +204,7 @@ const WorkshopEmployerOverview = () => {
                                         )}
                                     </div>
 
-                                    {/* Progress bar: based on current stage index */}
+                                    {/* Progress bar: based on current stage number */}
                                     <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden mt-1">
                                         <div
                                             className="h-full bg-primary transition-all duration-500 ease-in-out"
@@ -190,12 +216,12 @@ const WorkshopEmployerOverview = () => {
                                 <CardContent className="p-4 flex-1 flex flex-col gap-3">
                                     {/* Stage indicator pills */}
                                     <div className="flex gap-1 h-full">
-                                        {STAGES.map((stage, i) => {
+                                        {STAGE_DEFS.map((stage, i) => {
                                             const isPast = i < order.stageIdx;
                                             const isCurrent = i === order.stageIdx;
                                             return (
                                                 <div
-                                                    key={stage.value}
+                                                    key={stage.num}
                                                     className={cn(
                                                         'flex-1 flex flex-col items-center justify-center text-center p-2 rounded-lg border',
                                                         isPast
@@ -230,7 +256,7 @@ const WorkshopEmployerOverview = () => {
                                     {/* Active workers on this order */}
                                     {order.activeWorkers.length > 0 && (
                                         <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border/50">
-                                            {order.activeWorkers.map((w, i) => (
+                                            {order.activeWorkers.map((w: any, i: number) => (
                                                 <Badge key={i} variant="secondary" className="text-[10px] gap-1">
                                                     <User className="h-2.5 w-2.5" />
                                                     {w.name}

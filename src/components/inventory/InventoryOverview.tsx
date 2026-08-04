@@ -1,10 +1,20 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import StatCard from '@/components/cards/StatCard';
-import { Package, DollarSign, AlertTriangle, TrendingDown, Truck } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Package, DollarSign, AlertTriangle, TrendingDown, Truck, RefreshCw } from 'lucide-react';
 
 const InventoryOverview = () => {
-  const { data: materials } = useQuery({
+  const queryClient = useQueryClient();
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['inventory-materials-overview'] });
+    queryClient.invalidateQueries({ queryKey: ['pending-product-requests-overview'] });
+    queryClient.invalidateQueries({ queryKey: ['finished-products'] });
+    queryClient.invalidateQueries({ queryKey: ['pending-product-requests-count'] });
+  };
+
+  const { data: materials, isFetching: matFetching } = useQuery({
     queryKey: ['inventory-materials-overview'],
     queryFn: async () => {
       const { data } = await supabase.from('inventory_materials').select('*');
@@ -20,6 +30,17 @@ const InventoryOverview = () => {
     },
   });
 
+  const { data: finishedCount } = useQuery({
+    queryKey: ['finished-products-count'],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from('finished_products')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+      return count || 0;
+    },
+  });
+
   const totalMaterialsValue = (materials || []).reduce(
     (sum, m) => sum + m.quantity * m.unit_cost, 0
   );
@@ -32,6 +53,23 @@ const InventoryOverview = () => {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-lg font-bold text-foreground">Inventory Overview</h2>
+          <p className="text-xs text-muted-foreground">Live stock figures from the database</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={matFetching}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${matFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <StatCard
           title="Total Materials Value"
@@ -41,6 +79,11 @@ const InventoryOverview = () => {
         <StatCard
           title="Material Types"
           value={totalMaterials}
+          icon={<Package className="h-5 w-5" />}
+        />
+        <StatCard
+          title="Finished Products"
+          value={finishedCount ?? 0}
           icon={<Package className="h-5 w-5" />}
         />
         <StatCard

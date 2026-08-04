@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw, ArrowLeftRight, Factory } from 'lucide-react';
+import { LogOut, LayoutDashboard, Package, Users, AlertTriangle, ClipboardList, RotateCcw, Wallet, FileText, Truck, RotateCw, ArrowLeftRight, Factory, RefreshCw } from 'lucide-react';
 import InventoryOverview from './InventoryOverview';
 import RawMaterialsList from './RawMaterialsList';
 import SuppliersList from './SuppliersList';
@@ -44,8 +44,21 @@ const secondaryTabs: { id: Tab; label: string; icon: typeof Package }[] = [
 const InventoryOfficerDashboard = () => {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const queryClient = useQueryClient();
 
   const allTabs = [...tabs, ...secondaryTabs];
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['inventory-materials-overview'] });
+    queryClient.invalidateQueries({ queryKey: ['pending-product-requests-overview'] });
+    queryClient.invalidateQueries({ queryKey: ['finished-products'] });
+    queryClient.invalidateQueries({ queryKey: ['finished-products-count'] });
+    queryClient.invalidateQueries({ queryKey: ['pending-product-requests-count'] });
+    queryClient.invalidateQueries({ queryKey: ['raw-materials'] });
+    queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-alerts'] });
+    queryClient.invalidateQueries({ queryKey: ['production-orders-list'] });
+  };
 
   const { data: pendingCount } = useQuery({
     queryKey: ['pending-product-requests-count'],
@@ -73,7 +86,7 @@ const InventoryOfficerDashboard = () => {
             <p className="text-[10px] lg:text-xs text-muted-foreground xs:hidden">{profile?.full_name?.split(' ')[0]}</p>
           </div>
         </div>
-        <div className="flex items-center gap-0.5 overflow-x-auto max-w-[55vw] sm:max-w-none scrollbar-none">
+          <div className="flex items-center gap-0.5 overflow-x-auto max-w-[55vw] sm:max-w-none scrollbar-none">
           {secondaryTabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={cn("p-2 rounded-lg transition-colors relative group shrink-0",
@@ -90,6 +103,15 @@ const InventoryOfficerDashboard = () => {
               </span>
             </button>
           ))}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            title="Refresh dashboard"
+            className="shrink-0 ml-0.5"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={signOut} className="shrink-0 ml-0.5">
             <LogOut className="h-4 w-4" />
           </Button>

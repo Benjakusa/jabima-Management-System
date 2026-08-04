@@ -1,14 +1,25 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import StatCard from '@/components/cards/StatCard';
-import { DollarSign, ShoppingCart, Briefcase, TrendingUp, Calendar, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { DollarSign, ShoppingCart, Briefcase, TrendingUp, Calendar, Users, RefreshCw } from 'lucide-react';
 
 const SalesOverview = () => {
   const today = new Date().toISOString().split('T')[0];
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const queryClient = useQueryClient();
 
-  const { data: salesToday } = useQuery({
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['sales-today'] });
+    queryClient.invalidateQueries({ queryKey: ['sales-week'] });
+    queryClient.invalidateQueries({ queryKey: ['sales-month'] });
+    queryClient.invalidateQueries({ queryKey: ['service-sales-month'] });
+    queryClient.invalidateQueries({ queryKey: ['recent-sales'] });
+    queryClient.invalidateQueries({ queryKey: ['sales-profiles'] });
+  };
+
+  const { data: salesToday, isFetching } = useQuery({
     queryKey: ['sales-today'],
     queryFn: async () => {
       const { data } = await supabase.from('sales').select('selling_price').gte('created_at', today);
@@ -65,6 +76,23 @@ const SalesOverview = () => {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-lg font-bold text-foreground">Sales Overview</h2>
+          <p className="text-xs text-muted-foreground">Live revenue figures from the database</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={isFetching}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <StatCard title="Revenue Today" value={fmt(revToday)} icon={<DollarSign className="h-5 w-5" />} />
         <StatCard title="Revenue This Week" value={fmt(revWeek)} icon={<TrendingUp className="h-5 w-5" />} />

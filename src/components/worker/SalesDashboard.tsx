@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   LogOut, ShoppingCart, Briefcase, Loader2, Receipt, Wallet,
   LayoutDashboard, Target, Package, TrendingUp, Clock,
-  ClipboardList, RotateCcw, Wrench, CheckCircle2, XCircle, AlertTriangle
+  ClipboardList, RotateCcw, Wrench, CheckCircle2, XCircle, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { useMpesaPoll } from '@/hooks/useMpesaPoll';
 import { cn, formatCurrency } from '@/lib/utils';
@@ -551,7 +551,23 @@ const SalesDashboard = () => {
             <p className="text-[10px] lg:text-xs text-muted-foreground xs:hidden">{profile?.full_name?.split(' ')[0]}</p>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={signOut}><LogOut className="h-4 w-4" /></Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['my-product-sales', user?.id] });
+              queryClient.invalidateQueries({ queryKey: ['my-service-sales', user?.id] });
+              queryClient.invalidateQueries({ queryKey: ['available-products', profile?.branch_id] });
+              queryClient.invalidateQueries({ queryKey: ['my-wallet', user?.id] });
+              queryClient.invalidateQueries({ queryKey: ['my-payment-config', user?.id] });
+            }}
+            title="Refresh dashboard data"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={signOut}><LogOut className="h-4 w-4" /></Button>
+        </div>
       </header>
 
       <div className="p-3 lg:p-6 mx-auto max-w-5xl space-y-4 lg:space-y-6">

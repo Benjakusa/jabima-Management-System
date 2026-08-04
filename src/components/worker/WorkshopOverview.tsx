@@ -1,16 +1,24 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Factory, CheckCircle, Clock, Package, Settings } from 'lucide-react';
+import { Factory, CheckCircle, Clock, Package, RefreshCw } from 'lucide-react';
 import { formatStage } from '@/lib/utils';
 
 const WorkshopOverview = () => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  const { data: assignments } = useQuery({
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['my-assignments', user?.id] });
+    queryClient.invalidateQueries({ queryKey: ['my-stage-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['my-stage-logs', user?.id] });
+    queryClient.invalidateQueries({ queryKey: ['my-pending-requests', user?.id] });
+  };
+
+  const { data: assignments, isFetching } = useQuery({
     queryKey: ['my-assignments', user?.id],
     queryFn: async () => {
       const { data } = await supabase.from('stage_assignments').select('stage').eq('user_id', user!.id);
@@ -69,6 +77,24 @@ const WorkshopOverview = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with refresh */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-lg font-bold text-foreground">Workshop Overview</h2>
+          <p className="text-xs text-muted-foreground">Your live task summary</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={isFetching}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
+
       {/* Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {stats.map(s => (

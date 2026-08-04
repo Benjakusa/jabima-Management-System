@@ -122,6 +122,7 @@ const FinishedProductsList = () => {
                         : externalForm.product_type;
                     const rows = Array.from({ length: qty }, (_, i): any => ({
                         product_type: finalType,
+                        source_type: 'external',
                         production_cost: 0,
                         branch_id: externalForm.branch_id || null,
                         status: 'completed',
@@ -158,6 +159,7 @@ const FinishedProductsList = () => {
                         for (let i = 0; i < qty; i++) {
                             rows.push({
                                 product_type: finalType,
+                                source_type: 'external',
                                 production_cost: 0,
                                 branch_id: addBranchId || null,
                                 status: 'completed',

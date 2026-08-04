@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import StatCard from '@/components/cards/StatCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import ProductionChart from './ProductionChart';
 import RevenueChart from './RevenueChart';
 import ExpenseCharts from './ExpenseCharts';
@@ -13,13 +14,26 @@ import InstalmentOverview from './InstalmentOverview';
 import WorkshopEmployerOverview from './WorkshopEmployerOverview';
 import {
   Package, Factory, CheckCircle, ShoppingCart,
-  DollarSign, Clock, TrendingUp, PartyPopper, Building2
+  DollarSign, Clock, TrendingUp, PartyPopper, Building2, RefreshCw
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const AdminDashboard = () => {
   const today = new Date().toISOString().split('T')[0];
   const queryClient = useQueryClient();
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['recently-completed-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-workshop-live'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-workshop-completed-today'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-workshop-total-completed'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-by-branch'] });
+    queryClient.invalidateQueries({ queryKey: ['instalment-overview'] });
+    queryClient.invalidateQueries({ queryKey: ['revenue-chart'] });
+    queryClient.invalidateQueries({ queryKey: ['production-chart'] });
+  };
 
   useEffect(() => {
     const channel = supabase.channel('admin-dashboard-realtime')
@@ -78,7 +92,9 @@ const AdminDashboard = () => {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <h2 className="font-display text-xl font-bold text-foreground">Dashboard</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-xl font-bold text-foreground">Dashboard</h2>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} className="bg-card rounded-2xl p-4 border animate-pulse h-28" />
@@ -90,9 +106,15 @@ const AdminDashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="font-display text-xl font-bold text-foreground">Dashboard</h2>
-        <p className="text-sm text-muted-foreground">Business overview for today</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-xl font-bold text-foreground">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">Business overview for today</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
