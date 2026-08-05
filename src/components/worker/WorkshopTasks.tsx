@@ -167,7 +167,9 @@ const WorkshopTasks = () => {
       } else {
         toast({ title: `Status updated to ${newStatus}` });
       }
-      queryClient.invalidateQueries({ queryKey: ['my-stage-logs'] });
+      queryClient.invalidateQueries({ queryKey: ['my-stage-logs', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['my-stages-completed-today', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['my-earnings-today', user?.id] });
       queryClient.invalidateQueries({ queryKey: ['all-production-orders'] });
     },
     onError: (err: Error) => toast({ variant: 'destructive', title: 'Error', description: err.message }),
