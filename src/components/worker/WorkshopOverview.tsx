@@ -12,6 +12,7 @@ const WorkshopOverview = () => {
   const queryClient = useQueryClient();
 
   const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['my-stages-completed-today', user?.id] });
     queryClient.invalidateQueries({ queryKey: ['my-stage-logs', user?.id] });
     queryClient.invalidateQueries({ queryKey: ['my-pending-requests', user?.id] });
     queryClient.invalidateQueries({ queryKey: ['my-earnings-today', user?.id] });
@@ -19,14 +20,32 @@ const WorkshopOverview = () => {
 
 
 
+  // Dedicated query: stages completed by this worker today (fetched directly from DB)
+  const { data: stagesCompletedToday } = useQuery({
+    queryKey: ['my-stages-completed-today', user?.id],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('stage_logs')
+        .select('id')
+        .eq('worker_id', user!.id)
+        .gte('completed_at', today)
+        .not('completed_at', 'is', null);
+      if (error) throw error;
+      return data?.length || 0;
+    },
+    enabled: !!user,
+  });
+
   const { data: myLogs } = useQuery({
     queryKey: ['my-stage-logs', user?.id],
     queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
       const { data } = await supabase.from('stage_logs')
         .select('*')
         .eq('worker_id', user!.id)
-        .order('started_at', { ascending: false })
-        .limit(50);
+        .gte('started_at', today)
+        .order('started_at', { ascending: false });
       return data || [];
     },
     enabled: !!user,
@@ -61,11 +80,10 @@ const WorkshopOverview = () => {
     enabled: !!user,
   });
 
-  const completedToday = myLogs?.filter(l => l.completed_at && new Date(l.completed_at).toDateString() === new Date().toDateString()).length || 0;
   const activeTask = myLogs?.find(l => !l.completed_at);
 
   const stats = [
-    { label: 'Total Stages Completed', value: completedToday, icon: CheckCircle, color: 'text-success' },
+    { label: 'Total Stages Completed', value: stagesCompletedToday ?? 0, icon: CheckCircle, color: 'text-success' },
     { label: 'Total Earnings', value: formatCurrency(earningsToday || 0), icon: DollarSign, color: 'text-primary' },
     { label: 'Material Requests', value: pendingRequests?.length || 0, icon: Package, color: 'text-warning' },
   ];
