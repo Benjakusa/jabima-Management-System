@@ -34,9 +34,11 @@ const WorkerDashboard = () => {
     queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
     queryClient.invalidateQueries({ queryKey: ['my-stage-orders'] });
     queryClient.invalidateQueries({ queryKey: ['my-stage-logs'] });
+    queryClient.invalidateQueries({ queryKey: ['my-stages-completed-today'] });
     queryClient.invalidateQueries({ queryKey: ['my-pending-requests'] });
     queryClient.invalidateQueries({ queryKey: ['workshop-wallet'] });
     queryClient.invalidateQueries({ queryKey: ['production-orders-list'] });
+    queryClient.invalidateQueries({ queryKey: ['wp_production_tasks'] });
   };
 
   return (

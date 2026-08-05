@@ -171,6 +171,8 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
             queryClient.invalidateQueries({ queryKey: ['wp_production_stages', orderId] });
             queryClient.invalidateQueries({ queryKey: ['wp_production_tasks', orderId] });
             queryClient.invalidateQueries({ queryKey: ['production_orders', orderId] });
+            queryClient.invalidateQueries({ queryKey: ['my-stages-completed-today', user?.id] });
+            queryClient.invalidateQueries({ queryKey: ['my-earnings-today', user?.id] });
             toast({ title: 'Stage marked as completed' });
         }
     });

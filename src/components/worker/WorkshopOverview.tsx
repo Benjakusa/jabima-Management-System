@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Factory, CheckCircle, Clock, Package, RefreshCw, DollarSign } from 'lucide-react';
-import { formatStage, formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 
 const WorkshopOverview = () => {
   const { user } = useAuth();
@@ -24,15 +24,19 @@ const WorkshopOverview = () => {
   const { data: stagesCompletedToday } = useQuery({
     queryKey: ['my-stages-completed-today', user?.id],
     queryFn: async () => {
-      const today = new Date().toLocaleDateString('en-CA'); // gives YYYY-MM-DD in local timezone
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
       const { data, error } = await supabase
-        .from('stage_logs')
+        .from('wp_production_tasks' as any)
         .select('id')
-        .eq('worker_id', user!.id)
-        .eq('work_status', 'completed')
-        .gte('completed_at', today);
+        .eq('assigned_officer_id', user!.id)
+        .eq('status', 'Completed')
+        .gte('completed_at', start.toISOString())
+        .lte('completed_at', end.toISOString());
       if (error) throw error;
-      return data?.length || 0;
+      return (data as any[])?.length || 0;
     },
     enabled: !!user,
   });
@@ -40,13 +44,12 @@ const WorkshopOverview = () => {
   const { data: myLogs } = useQuery({
     queryKey: ['my-stage-logs', user?.id],
     queryFn: async () => {
-      const today = new Date().toISOString().split('T')[0];
-      const { data } = await supabase.from('stage_logs')
+      const { data } = await supabase.from('wp_production_tasks' as any)
         .select('*')
-        .eq('worker_id', user!.id)
-        .gte('started_at', today)
-        .order('started_at', { ascending: false });
-      return data || [];
+        .eq('assigned_officer_id', user!.id)
+        .order('started_at', { ascending: false })
+        .limit(30);
+      return (data as any[]) || [];
     },
     enabled: !!user,
   });
@@ -80,7 +83,7 @@ const WorkshopOverview = () => {
     enabled: !!user,
   });
 
-  const activeTask = myLogs?.find(l => !l.completed_at);
+  const activeTask = myLogs?.find(l => l.status === 'In Progress');
 
   const stats = [
     { label: 'Total Stages Completed', value: stagesCompletedToday ?? 0, icon: CheckCircle, color: 'text-success' },
@@ -130,7 +133,7 @@ const WorkshopOverview = () => {
               <Clock className="h-4 w-4 text-warning animate-pulse" />
               <span className="text-sm font-medium text-foreground">Active Task</span>
             </div>
-            <Badge variant="outline" className="text-warning border-warning/30">{formatStage(activeTask.stage)}</Badge>
+            <Badge variant="outline" className="text-warning border-warning/30">{activeTask.stage_name || activeTask.task_name}</Badge>
             <p className="text-xs text-muted-foreground mt-1">Started: {new Date(activeTask.started_at).toLocaleTimeString()}</p>
           </CardContent>
         </Card>
@@ -142,16 +145,16 @@ const WorkshopOverview = () => {
       <div>
         <h3 className="font-display font-semibold text-foreground mb-2 text-sm">Recent Activity</h3>
         <div className="space-y-1">
-          {(myLogs || []).filter(l => l.completed_at).slice(0, 8).map(l => (
+          {(myLogs || []).filter(l => l.status === 'Completed').slice(0, 8).map(l => (
             <div key={l.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/30 text-sm">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-3 w-3 text-success" />
-                <span className="text-foreground">{formatStage(l.stage)}</span>
+                <span className="text-foreground">{l.stage_name || l.task_name}</span>
               </div>
-              <span className="text-xs text-muted-foreground">{new Date(l.completed_at!).toLocaleDateString()}</span>
+              <span className="text-xs text-muted-foreground">{l.completed_at ? new Date(l.completed_at).toLocaleDateString() : ''}</span>
             </div>
           ))}
-          {(!myLogs || myLogs.filter(l => l.completed_at).length === 0) && (
+          {(!myLogs || myLogs.filter(l => l.status === 'Completed').length === 0) && (
             <p className="text-sm text-muted-foreground text-center py-4">No completed tasks yet</p>
           )}
         </div>
