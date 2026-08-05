@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Factory, Package, RotateCcw, Wallet, FileText, RefreshCw } from 'lucide-react';
+import { LogOut, LayoutDashboard, Factory, Package, RotateCcw, Wallet, FileText, RefreshCw, ListChecks } from 'lucide-react';
 import WorkshopOverview from './WorkshopOverview';
 import WorkshopTasks from './WorkshopTasks';
 import WorkshopMaterialRequests from './WorkshopMaterialRequests';
 import WorkshopMaterialReturns from './WorkshopMaterialReturns';
 import WorkshopWallet from './WorkshopWallet';
+import MyStagesList from './MyStagesList';
 
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
@@ -18,6 +19,7 @@ type Tab = 'overview' | 'mystages' | 'requests' | 'returns' | 'production' | 'wa
 
 const tabs: { id: Tab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'mystages', label: 'My Stages', icon: ListChecks },
   { id: 'production', label: 'Production', icon: Factory },
   { id: 'requests', label: 'Materials', icon: Package },
   { id: 'returns', label: 'Returns', icon: RotateCcw },
@@ -75,6 +77,19 @@ const WorkerDashboard = () => {
         <DailyReportReminder />
 
         {activeTab === 'overview' && <WorkshopOverview />}
+
+        {activeTab === 'mystages' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-display text-xl font-bold text-foreground">My Stages</h2>
+              <p className="text-sm text-muted-foreground">Products you are currently working on</p>
+            </div>
+            <MyStagesList onViewProduct={(id) => {
+              localStorage.setItem('selected_production_order_id', id);
+              setActiveTab('production');
+            }} />
+          </div>
+        )}
 
         {activeTab === 'requests' && <WorkshopMaterialRequests />}
         {activeTab === 'returns' && <WorkshopMaterialReturns />}

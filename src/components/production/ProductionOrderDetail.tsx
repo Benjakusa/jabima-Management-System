@@ -232,6 +232,9 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
                     const stageTasks = tasks?.filter((t: any) => t.stage_id === stage.id) || [];
                     const isCompleted = stage.status === 'Completed';
 
+                    const previousStage = (stages as any[] || []).find((s: any) => s.stage_number === stage.stage_number - 1);
+                    const isPreviousStageCompleted = !previousStage || previousStage.status === 'Completed';
+
                     // Determine if someone is actively working or has completed it
                     const myActiveTask = stageTasks.find((t: any) => t.assigned_officer_id === user?.id && t.status === 'In Progress');
                     const otherWorkerTask = stageTasks.find((t: any) => t.assigned_officer_id !== user?.id && t.status === 'In Progress');
@@ -239,9 +242,9 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
                     const isTaken = !!myActiveTask || !!otherWorkerTask;
                     const workerTask = myActiveTask || otherWorkerTask || stageTasks[0];
 
-                    // If taken by another worker and not completed, it's locked for us
-                    const isLocked = !!otherWorkerTask && !myActiveTask && !isCompleted;
-                    const isUnlocked = !isTaken && !isCompleted;
+                    // Locked if previous stage not completed OR taken by another worker
+                    const isLocked = (!isPreviousStageCompleted) || (!!otherWorkerTask && !myActiveTask && !isCompleted);
+                    const isUnlocked = isPreviousStageCompleted && !isTaken && !isCompleted;
 
                     return (
                         <Card key={stage.id} className={cn("overflow-hidden transition-all", isLocked && "opacity-60 bg-muted/30")}>
@@ -257,7 +260,7 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
                                         <CardTitle className="text-base">{stage.stage_name}</CardTitle>
                                         <p className="text-xs text-muted-foreground mt-0.5">
                                             {isCompleted ? `Completed ${stage.completed_at ? format(new Date(stage.completed_at), 'MMM d, HH:mm') : ''}` :
-                                                isLocked ? 'Locked by another worker' : 'Available for Selection'}
+                                                isLocked ? (!isPreviousStageCompleted ? 'Waiting for previous stage' : 'Locked by another worker') : 'Available for Selection'}
                                         </p>
                                     </div>
                                 </div>
@@ -265,7 +268,7 @@ const ProductionOrderDetail = ({ orderId, onBack }: ProductionOrderDetailProps) 
                                 {isUnlocked && <Unlock className="h-4 w-4 text-primary" />}
                             </CardHeader>
 
-                            {(!isLocked || myActiveTask || isAdminOrOfficer) && !isCompleted && (
+                            {(!isLocked || myActiveTask || (isAdminOrOfficer && isPreviousStageCompleted) || (isAdminOrOfficer && isTaken)) && !isCompleted && (
                                 <CardContent className="p-4 bg-card">
                                     {workerTask && (
                                         <div className="mb-4 space-y-2">
