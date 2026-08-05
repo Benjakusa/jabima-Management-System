@@ -24,15 +24,13 @@ const WorkshopOverview = () => {
   const { data: stagesCompletedToday } = useQuery({
     queryKey: ['my-stages-completed-today', user?.id],
     queryFn: async () => {
-      // Use start of today in UTC to avoid timezone issues
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      const today = new Date().toLocaleDateString('en-CA'); // gives YYYY-MM-DD in local timezone
       const { data, error } = await supabase
         .from('stage_logs')
         .select('id')
         .eq('worker_id', user!.id)
         .eq('work_status', 'completed')
-        .gte('completed_at', todayStart.toISOString());
+        .gte('completed_at', today);
       if (error) throw error;
       return data?.length || 0;
     },
