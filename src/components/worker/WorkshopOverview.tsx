@@ -4,41 +4,20 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Factory, CheckCircle, Clock, Package, RefreshCw } from 'lucide-react';
-import { formatStage } from '@/lib/utils';
+import { Factory, CheckCircle, Clock, Package, RefreshCw, DollarSign } from 'lucide-react';
+import { formatStage, formatCurrency } from '@/lib/utils';
 
 const WorkshopOverview = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['my-assignments', user?.id] });
-    queryClient.invalidateQueries({ queryKey: ['my-stage-orders'] });
     queryClient.invalidateQueries({ queryKey: ['my-stage-logs', user?.id] });
     queryClient.invalidateQueries({ queryKey: ['my-pending-requests', user?.id] });
+    queryClient.invalidateQueries({ queryKey: ['my-earnings-today', user?.id] });
   };
 
-  const { data: assignments, isFetching } = useQuery({
-    queryKey: ['my-assignments', user?.id],
-    queryFn: async () => {
-      const { data } = await supabase.from('stage_assignments').select('stage').eq('user_id', user!.id);
-      return data?.map(a => a.stage) || [];
-    },
-    enabled: !!user,
-  });
 
-  const { data: myOrders } = useQuery({
-    queryKey: ['my-stage-orders', assignments],
-    queryFn: async () => {
-      if (!assignments || assignments.length === 0) return [];
-      const { data } = await supabase.from('production_orders')
-        .select('*')
-        .in('current_stage', assignments)
-        .eq('status', 'in_production');
-      return data || [];
-    },
-    enabled: !!assignments && assignments.length > 0,
-  });
 
   const { data: myLogs } = useQuery({
     queryKey: ['my-stage-logs', user?.id],
@@ -56,11 +35,28 @@ const WorkshopOverview = () => {
   const { data: pendingRequests } = useQuery({
     queryKey: ['my-pending-requests', user?.id],
     queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
       const { data } = await supabase.from('material_requests')
         .select('id')
         .eq('worker_id', user!.id)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .gte('created_at', today);
       return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const { data: earningsToday } = useQuery({
+    queryKey: ['my-earnings-today', user?.id],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase.from('wallet_transactions')
+        .select('amount, wallets!inner(user_id)')
+        .eq('wallets.user_id', user!.id)
+        .eq('type', 'earned')
+        .gte('created_at', today);
+      if (error) throw error;
+      return data?.reduce((sum, t) => sum + t.amount, 0) || 0;
     },
     enabled: !!user,
   });
@@ -69,10 +65,9 @@ const WorkshopOverview = () => {
   const activeTask = myLogs?.find(l => !l.completed_at);
 
   const stats = [
-    { label: 'Pending Tasks', value: myOrders?.length || 0, icon: Factory, color: 'text-warning' },
-    { label: 'Done Today', value: completedToday, icon: CheckCircle, color: 'text-success' },
-    { label: 'Material Requests', value: pendingRequests?.length || 0, icon: Package, color: 'text-primary' },
-    { label: 'My Stages', value: assignments?.length || 0, icon: Clock, color: 'text-muted-foreground' },
+    { label: 'Total Stages Completed', value: completedToday, icon: CheckCircle, color: 'text-success' },
+    { label: 'Total Earnings', value: formatCurrency(earningsToday || 0), icon: DollarSign, color: 'text-primary' },
+    { label: 'Material Requests', value: pendingRequests?.length || 0, icon: Package, color: 'text-warning' },
   ];
 
   return (
@@ -87,10 +82,9 @@ const WorkshopOverview = () => {
           variant="outline"
           size="sm"
           onClick={handleRefresh}
-          disabled={isFetching}
           className="gap-2"
         >
-          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          <RefreshCw className="h-4 w-4" />
           Refresh
         </Button>
       </div>
@@ -124,20 +118,7 @@ const WorkshopOverview = () => {
         </Card>
       )}
 
-      {/* Assigned stages */}
-      <div>
-        <h3 className="font-display font-semibold text-foreground mb-2 text-sm">My Assigned Stages</h3>
-        <div className="flex flex-wrap gap-2">
-          {(assignments || []).map(s => (
-            <Badge key={s} variant="secondary" className="text-xs py-1 px-3">{formatStage(s)}</Badge>
-          ))}
-          {(!assignments || assignments.length === 0) && (
-            <p className="text-xs text-muted-foreground text-center py-2">
-              Use the <span className="font-medium text-foreground">My Stages</span> tab below to choose your work areas
-            </p>
-          )}
-        </div>
-      </div>
+
 
       {/* Production timeline (recent activity) */}
       <div>

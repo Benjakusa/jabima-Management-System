@@ -61,30 +61,28 @@ const AdminDashboard = () => {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['admin-dashboard-stats', today],
     queryFn: async () => {
-      const [materialsRes, finishedRes, productionRes, completedRes, salesRes, walletsRes] =
+      const [materialsRes, finishedRes, productionRes, salesRes, staffEarningsRes, paymentsRes] =
         await Promise.all([
-          supabase.from('inventory_materials').select('quantity, unit_cost'),
-          supabase.from('finished_products').select('id').eq('status', 'completed').eq('is_active', true),
-          supabase.from('production_orders').select('id').eq('status', 'in_production'),
-          supabase.from('production_orders').select('id').eq('status', 'completed').gte('completed_at', today),
+          supabase.from('product_material_usage').select('quantity_used, inventory_materials(unit_cost)').gte('created_at', today),
+          supabase.from('finished_products').select('id').eq('status', 'completed').gte('completed_at', today),
+          supabase.from('production_orders').select('id').eq('status', 'in_production').gte('started_at', today),
           supabase.from('sales').select('selling_price').gte('created_at', today),
-          supabase.from('wallets').select('pending_earnings'),
+          supabase.from('wallet_transactions').select('amount').eq('type', 'earned').gte('created_at', today),
+          supabase.from('wallet_transactions').select('amount').eq('type', 'paid').gte('created_at', today),
         ]);
 
-      const materialsValue = (materialsRes.data || []).reduce(
-        (sum, m) => sum + (m.quantity * m.unit_cost), 0
-      );
+      const materialsValue = (materialsRes.data || []).reduce((sum, m: any) => sum + (m.quantity_used * (m.inventory_materials?.unit_cost || 0)), 0);
       const revenue = (salesRes.data || []).reduce((sum, s) => sum + s.selling_price, 0);
-      const pending = (walletsRes.data || []).reduce((sum, w) => sum + w.pending_earnings, 0);
+      const staffEarnings = (staffEarningsRes.data || []).reduce((sum, s) => sum + s.amount, 0);
+      const payments = (paymentsRes.data || []).reduce((sum, p) => sum + p.amount, 0);
 
       return {
-        totalMaterialsValue: materialsValue,
+        totalMaterialCosts: materialsValue,
         finishedProducts: finishedRes.data?.length || 0,
         inProduction: productionRes.data?.length || 0,
-        completedToday: completedRes.data?.length || 0,
-        soldToday: salesRes.data?.length || 0,
-        revenueToday: revenue,
-        pendingPayments: pending,
+        salesToday: revenue,
+        staffEarningsToday: staffEarnings,
+        paymentsToday: payments,
       };
     },
   });
@@ -117,43 +115,36 @@ const AdminDashboard = () => {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <StatCard
-          title="Raw Materials Value"
-          value={formatCurrency(stats.totalMaterialsValue)}
+          title="Total Material Costs (Today)"
+          value={formatCurrency(stats.totalMaterialCosts)}
           icon={<Package className="h-5 w-5" />}
-          trend={{ value: 5, label: 'vs last week' }}
         />
         <StatCard
-          title="Finished Products"
+          title="Finished Products (Today)"
           value={stats.finishedProducts}
           icon={<CheckCircle className="h-5 w-5" />}
         />
         <StatCard
-          title="In Production"
+          title="Products in Production"
           value={stats.inProduction}
           icon={<Factory className="h-5 w-5" />}
         />
         <StatCard
-          title="Completed Today"
-          value={stats.completedToday}
-          icon={<TrendingUp className="h-5 w-5" />}
-        />
-        <StatCard
-          title="Sold Today"
-          value={stats.soldToday}
+          title="Total Sales (Today)"
+          value={formatCurrency(stats.salesToday)}
           icon={<ShoppingCart className="h-5 w-5" />}
         />
         <StatCard
-          title="Revenue Today"
-          value={formatCurrency(stats.revenueToday)}
+          title="Total Staff Earnings"
+          value={formatCurrency(stats.staffEarningsToday)}
           icon={<DollarSign className="h-5 w-5" />}
-          trend={{ value: 12, label: 'vs yesterday' }}
         />
         <StatCard
-          title="Pending Payments"
-          value={formatCurrency(stats.pendingPayments)}
-          icon={<Clock className="h-5 w-5" />}
+          title="Total Payments (Today)"
+          value={formatCurrency(stats.paymentsToday)}
+          icon={<TrendingUp className="h-5 w-5" />}
         />
       </div>
 

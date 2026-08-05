@@ -463,30 +463,7 @@ const ProductionOrdersList = ({ onViewProduct }: Props) => {
                     <p className="text-xs text-muted-foreground mt-2 bg-accent/30 rounded-lg px-2 py-1 truncate">{order.notes}</p>
                   )}
 
-                  {/* Advance button */}
-                  {!isCompleted && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 w-full"
-                      onClick={() => advanceStageMutation.mutate({ orderId: order.id, currentStage: order.current_stage })}
-                      disabled={advanceStageMutation.isPending}
-                    >
-                      {advanceStageMutation.isPending ? (
-                        <Loader2 className="animate-spin h-3.5 w-3.5" />
-                      ) : stageIdx === STAGES.length - 1 ? (
-                        <>
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          Mark Complete
-                        </>
-                      ) : (
-                        <>
-                          <ArrowRight className="h-3.5 w-3.5" />
-                          Advance to {STAGES[stageIdx + 1]?.label}
-                        </>
-                      )}
-                    </Button>
-                  )}
+
                 </CardContent>
               </Card>
             );

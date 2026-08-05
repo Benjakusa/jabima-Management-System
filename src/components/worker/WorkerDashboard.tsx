@@ -8,7 +8,6 @@ import WorkshopTasks from './WorkshopTasks';
 import WorkshopMaterialRequests from './WorkshopMaterialRequests';
 import WorkshopMaterialReturns from './WorkshopMaterialReturns';
 import WorkshopWallet from './WorkshopWallet';
-import MyStagesList from './MyStagesList';
 
 import DailyReportForm from './DailyReportForm';
 import DailyReportReminder from './DailyReportReminder';
@@ -19,7 +18,6 @@ type Tab = 'overview' | 'mystages' | 'requests' | 'returns' | 'production' | 'wa
 
 const tabs: { id: Tab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'mystages', label: 'My Stages', icon: FileText },
   { id: 'production', label: 'Production', icon: Factory },
   { id: 'requests', label: 'Materials', icon: Package },
   { id: 'returns', label: 'Returns', icon: RotateCcw },
@@ -75,10 +73,7 @@ const WorkerDashboard = () => {
         <DailyReportReminder />
 
         {activeTab === 'overview' && <WorkshopOverview />}
-        {activeTab === 'mystages' && <MyStagesList onViewProduct={(id) => {
-          localStorage.setItem('selected_production_order_id', id);
-          setActiveTab('production');
-        }} />}
+
         {activeTab === 'requests' && <WorkshopMaterialRequests />}
         {activeTab === 'returns' && <WorkshopMaterialReturns />}
         {activeTab === 'production' && <ProductionManagement />}
