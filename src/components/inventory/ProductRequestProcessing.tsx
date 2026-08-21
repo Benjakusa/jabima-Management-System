@@ -36,7 +36,53 @@ const ProductRequestProcessing = () => {
                 .eq('status', filter)
                 .order('created_at', { ascending: false });
             if (error) throw error;
-            return data || [];
+            if (!data || data.length === 0) return [];
+
+            const allProductIds = Array.from(new Set(data.flatMap((r: any) => r.selected_product_ids || [])));
+
+            let productsMap: Record<string, any> = {};
+            if (allProductIds.length > 0) {
+                const { data: productsData } = await supabase
+                    .from('finished_products')
+                    .select('*, production_orders(product_code, batch_number)')
+                    .in('id', allProductIds);
+
+                if (productsData) {
+                    productsData.forEach((p: any) => {
+                        productsMap[p.id] = p;
+                    });
+                }
+            }
+
+            return data.map((req: any) => {
+                const selectedIds: string[] = req.selected_product_ids || [];
+                let items: Array<{ id: string; name: string; type: string; quantity: number }> = [];
+
+                if (selectedIds.length > 0) {
+                    selectedIds.forEach((id: string) => {
+                        const p = productsMap[id];
+                        if (p) {
+                            const name = p.name || p.batch_number || p.production_orders?.product_code || `Product #${p.id.slice(0, 8)}`;
+                            const type = p.product_type || 'Unknown';
+                            items.push({ id, name, type, quantity: 1 });
+                        } else {
+                            items.push({ id, name: `Product #${id.slice(0, 8)}`, type: req.product_type || 'Unknown', quantity: 1 });
+                        }
+                    });
+                } else {
+                    items.push({
+                        id: req.id,
+                        name: req.product_type || 'Requested Product',
+                        type: req.product_type || 'N/A',
+                        quantity: req.quantity || 1,
+                    });
+                }
+
+                return {
+                    ...req,
+                    requested_items: items,
+                };
+            });
         },
     });
 
@@ -212,13 +258,7 @@ const ProductRequestProcessing = () => {
                                             <div className="text-[10px] text-muted-foreground space-y-0.5 mt-1">
                                                 <p>Agent: {req.profiles?.full_name || 'Unknown'}</p>
                                                 <p>Branch: {req.branches?.name || 'Main Warehouse'}</p>
-                                                <p>Quantity: <span className="font-semibold text-foreground">{req.quantity}</span></p>
-                                                {req.selected_product_ids && req.selected_product_ids.length > 0 && (
-                                                    <p className="text-primary font-medium flex items-center gap-1">
-                                                        <CheckCircle className="h-2.5 w-2.5" />
-                                                        {req.selected_product_ids.length} specific items picked by agent
-                                                    </p>
-                                                )}
+                                                <p>Total Quantity: <span className="font-semibold text-foreground">{req.quantity}</span></p>
                                                 {req.notes && <p className="italic">Note: {req.notes}</p>}
                                             </div>
                                         </div>
@@ -226,6 +266,35 @@ const ProductRequestProcessing = () => {
                                             {new Date(req.created_at).toLocaleDateString()}
                                         </span>
                                     </div>
+
+                                    {/* Requested Products Details */}
+                                    {req.requested_items && req.requested_items.length > 0 && (
+                                        <div className="pt-2 border-t space-y-1.5">
+                                            <p className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                                                <Package className="h-3.5 w-3.5 text-primary" /> Requested Product Details:
+                                            </p>
+                                            <div className="space-y-1.5">
+                                                {req.requested_items.map((item: any, idx: number) => (
+                                                    <div key={item.id ? `${item.id}-${idx}` : idx} className="flex items-center justify-between p-2 rounded-lg bg-accent/30 border border-border/50 text-xs">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-medium text-foreground truncate">
+                                                                <span className="text-muted-foreground font-normal">Name: </span>
+                                                                {item.name}
+                                                            </p>
+                                                            <p className="text-[10px] text-muted-foreground">
+                                                                Type: <span className="font-medium text-foreground">{item.type}</span>
+                                                            </p>
+                                                        </div>
+                                                        <div className="text-right shrink-0 ml-2">
+                                                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                                                Qty: {item.quantity}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {filter === 'pending' && (
                                         <div className="space-y-2">
