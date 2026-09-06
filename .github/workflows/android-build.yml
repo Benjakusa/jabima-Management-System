@@ -21,7 +21,7 @@ jobs:
           cache: 'npm'
 
       - name: Install NPM Dependencies
-        run: npm install --legacy-peer-deps   ← ✅ ADDED FLAG
+        run: npm install --legacy-peer-deps
 
       - name: Build Web App
         env:
