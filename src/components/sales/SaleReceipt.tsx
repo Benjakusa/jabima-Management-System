@@ -206,28 +206,37 @@ const sharePDFViaEmail = async () => {
   const doPrint = () => {
     if (!receiptRef.current) return;
 
+    // Ensure content exists
+    if (!receiptRef.current.innerHTML.trim()) {
+      alert('No receipt content to print. Please wait for the receipt to load.');
+      return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <style>
-            @page { margin: 0; size: ${printSize === 'a4' ? 'A4' : '58mm auto'}; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .rpt-divider { border-color: #999; }
-            .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
-            h2, h3 { text-align: center; }
-            p { margin: 4px 0; }
-          </style>
-        </head>
-        <body>
-          ${receiptRef.current.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    // Give the window a moment to load, then write content
+    setTimeout(() => {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <style>
+              @page { margin: 0; size: ${printSize === 'a4' ? 'A4' : '58mm auto'}; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .rpt-divider { border-color: #999; }
+              .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
+              h2, h3 { text-align: center; }
+              p { margin: 4px 0; }
+            </style>
+          </head>
+          <body>
+            ${receiptRef.current.innerHTML}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    }, 100);
   };
 
   const downloadPDF = async (existingBlob?: Blob) => {
