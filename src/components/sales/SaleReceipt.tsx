@@ -215,28 +215,27 @@ const sharePDFViaEmail = async () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    // Give the window a moment to load, then write content
-    setTimeout(() => {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <style>
-              @page { margin: 0; size: ${printSize === 'a4' ? 'A4' : '58mm auto'}; }
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .rpt-divider { border-color: #999; }
-              .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
-              h2, h3 { text-align: center; }
-              p { margin: 4px 0; }
-            </style>
-          </head>
-          <body>
-            ${receiptRef.current.innerHTML}
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.print();
-    }, 100);
+    // Must write content synchronously when window opens, or use document.open()
+    printWindow.document.open();
+    printWindow.document.write(`
+      <html>
+        <head>
+          <style>
+            @page { margin: 0; size: ${printSize === 'a4' ? 'A4' : '58mm auto'}; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .rpt-divider { border-color: #999; }
+            .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
+            h2, h3 { text-align: center; }
+            p { margin: 4px 0; }
+          </style>
+        </head>
+        <body>
+          ${receiptRef.current.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const downloadPDF = async (existingBlob?: Blob) => {
