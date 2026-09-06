@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Mail, MessageCircle, FileDown } from 'lucide-react';
+import { Mail, MessageCircle, FileDown, Printer } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -27,6 +27,7 @@ type PrintSize = 'thermal' | 'a4';
 const SaleReceipt = ({ saleId, type }: Props) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [printSize, setPrintSize] = useState<PrintSize>('thermal');
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
   const { data: sale, isLoading } = useQuery({
     queryKey: ['receipt-data', saleId, type],
@@ -117,7 +118,9 @@ const SaleReceipt = ({ saleId, type }: Props) => {
       pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
     }
 
-    return pdf.output('blob');
+    const blob = pdf.output('blob');
+    setPdfBlob(blob);
+    return blob;
   };
 
 const formatReceiptText = () => {
@@ -150,24 +153,36 @@ const formatReceiptText = () => {
 
   const sharePDFViaWhatsApp = async () => {
     if (!sale) return;
-    const blob = await generatePDFBlob();
+    const blob = pdfBlob || await generatePDFBlob();
     if (!blob) return;
 
     downloadPDF(blob);
 
-    const waUrl = `https://wa.me/?text=${encodeURIComponent(formatReceiptText())}`;
-    const a = document.createElement('a');
-    a.href = waUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const file = new File([blob], `receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`, {
+      type: 'application/pdf',
+    });
+
+    if (navigator.share) {
+      await navigator.share({
+        files: [file],
+        title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
+        text: `${COMPANY.name} Receipt`,
+      });
+    } else {
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(formatReceiptText())}`;
+      const a = document.createElement('a');
+      a.href = waUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   };
 
-  const sharePDFViaEmail = async () => {
+const sharePDFViaEmail = async () => {
     if (!sale) return;
-    const blob = await generatePDFBlob();
+    const blob = pdfBlob || await generatePDFBlob();
     if (!blob) return;
 
     downloadPDF(blob);
@@ -177,9 +192,37 @@ const formatReceiptText = () => {
     window.location.href = mailtoUrl;
   };
 
+  const printReceipt = () => {
+    if (!receiptRef.current) return;
+
+    const printSizeVal = printSize === 'a4' ? 'A4' : '58mm';
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <style>
+            @page { margin: 0; size: ${printSizeVal} auto; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .rpt-divider { border-color: #999; }
+            .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
+            h2, h3 { text-align: center; }
+            p { margin: 4px 0; }
+          </style>
+        </head>
+        <body>
+          ${receiptRef.current.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   const downloadPDF = async (existingBlob?: Blob) => {
     if (!sale) return;
-    const blob = existingBlob || await generatePDFBlob();
+    const blob = existingBlob || pdfBlob || await generatePDFBlob();
     if (!blob) return;
 
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
@@ -233,6 +276,9 @@ const formatReceiptText = () => {
         </Button>
         <Button onClick={sharePDFViaWhatsApp} variant="outline" size="lg" className="flex-1">
           <MessageCircle className="h-4 w-4" />WhatsApp
+        </Button>
+        <Button onClick={printReceipt} variant="outline" size="lg" className="flex-1">
+          <Printer className="h-4 w-4" />Print
         </Button>
         <Button onClick={sharePDFViaEmail} variant="outline" size="lg" className="flex-1">
           <Mail className="h-4 w-4" />Email
