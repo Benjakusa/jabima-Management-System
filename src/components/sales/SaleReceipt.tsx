@@ -6,6 +6,9 @@ import { Mail, MessageCircle, FileDown, Printer } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import RNFS from 'react-native-fs';
+import RNShare from 'react-native-share';
+import { print, selectPrinter } from 'react-native-print';
 
 interface Props {
   saleId: string;
@@ -28,6 +31,8 @@ const SaleReceipt = ({ saleId, type }: Props) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [printSize, setPrintSize] = useState<PrintSize>('thermal');
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printCopies, setPrintCopies] = useState(1);
 
   const { data: sale, isLoading } = useQuery({
     queryKey: ['receipt-data', saleId, type],
@@ -156,27 +161,26 @@ const formatReceiptText = () => {
     const blob = pdfBlob || await generatePDFBlob();
     if (!blob) return;
 
-    downloadPDF(blob);
+    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
+    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
 
-    const file = new File([blob], `receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`, {
-      type: 'application/pdf',
-    });
-
-    if (navigator.share) {
-      await navigator.share({
-        files: [file],
-        title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
-        text: `${COMPANY.name} Receipt`,
+    try {
+      const blobString = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string || '');
+        reader.readAsDataURL(blob);
       });
-    } else {
-      const waUrl = `https://wa.me/?text=${encodeURIComponent(formatReceiptText())}`;
-      const a = document.createElement('a');
-      a.href = waUrl;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const base64 = blobString!.split(',')[1];
+      await RNFS.writeFile(path, base64, 'base64');
+
+      await RNShare.shareSingle({
+        filePath: path,
+        social: RNShare.Social.Whatsapp,
+        title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
+        message: `${COMPANY.name} Receipt`,
+      });
+    } catch (error) {
+      alert('Failed to share to WhatsApp: ' + error.message);
     }
   };
 
@@ -193,31 +197,18 @@ const sharePDFViaEmail = async () => {
   };
 
   const printReceipt = () => {
+    setPrintModalOpen(true);
+  };
+
+  const doPrint = async () => {
     if (!receiptRef.current) return;
 
-    const printSizeVal = printSize === 'a4' ? 'A4' : '58mm';
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <style>
-            @page { margin: 0; size: ${printSizeVal} auto; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .rpt-divider { border-color: #999; }
-            .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
-            h2, h3 { text-align: center; }
-            p { margin: 4px 0; }
-          </style>
-        </head>
-        <body>
-          ${receiptRef.current.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    const content = receiptRef.current.innerHTML;
+    await print({
+      html: content,
+      jobName: 'Jabima Receipt',
+      isLandscape: printSize === 'a4',
+    });
   };
 
   const downloadPDF = async (existingBlob?: Blob) => {
@@ -226,14 +217,20 @@ const sharePDFViaEmail = async () => {
     if (!blob) return;
 
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+
+    try {
+      const blobString = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string || '');
+        reader.readAsDataURL(blob);
+      });
+      const base64 = blobString!.split(',')[1];
+      await RNFS.writeFile(path, base64, 'base64');
+      alert(`Receipt saved to:\n${path}`);
+    } catch (error) {
+      alert('Failed to save receipt: ' + error.message);
+    }
   };
 
   if (isLoading || !sale) {
@@ -284,6 +281,50 @@ const sharePDFViaEmail = async () => {
           <Mail className="h-4 w-4" />Email
         </Button>
       </div>
+
+      {printModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl transform scale-100 transition-transform duration-300">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Print Receipt</h3>
+              <button onClick={() => setPrintModalOpen(false)} className="text-gray-500 hover:text-red-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path className="stroke-width-2" d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Print Size</label>
+              <select onChange={(e) => setPrintSize(e.target.value as PrintSize)} className="w-full rounded border border-input p-2">
+                <option value="thermal">Thermal (58mm)</option>
+                <option value="a4">A4 Paper</option>
+              </select>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Number of Copies</label>
+              <input
+                type="number"
+                value={printCopies}
+                onChange={(e) => setPrintCopies(Math.max(1, Number(e.target.value)))}
+                className="w-full rounded border border-input p-2"
+                min="1"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => {
+                doPrint();
+                setPrintModalOpen(false);
+              }} className="flex-1 bg-green-600 text-white py-2 rounded hover:bg-green-700">
+                Print
+              </button>
+              <button onClick={() => setPrintModalOpen(false)} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded hover:bg-gray-300">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div ref={receiptRef} className="bg-white/80 backdrop-blur-sm rounded-lg border-2 border-black/20 overflow-hidden mx-auto shadow-lg"
         style={{ width: printSize === 'a4' ? '190mm' : '58mm', minWidth: printSize === 'a4' ? 'auto' : '58mm', maxWidth: '100%' }}>
