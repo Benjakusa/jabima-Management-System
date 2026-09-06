@@ -159,32 +159,26 @@ const formatReceiptText = () => {
     if (!blob) return;
 
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const url = URL.createObjectURL(blob);
-    
-    // Try to share via Web Share API first
-    if (navigator.share) {
-      try {
-        const file = new File([blob], fileName, { type: 'application/pdf' });
-        await navigator.share({
-          files: [file],
-          title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
-          text: `${COMPANY.name} Receipt`,
-        });
-        return;
-      } catch (e) {
-        // Fall through to WhatsApp link
-      }
-    }
+    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
 
-    // Fallback: Open WhatsApp web link
-    const waUrl = `https://wa.me/?text=${encodeURIComponent(formatReceiptText())}`;
-    const a = document.createElement('a');
-    a.href = waUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const blobString = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string || '');
+        reader.readAsDataURL(blob);
+      });
+      const base64 = blobString!.split(',')[1];
+      await RNFS.writeFile(path, base64, 'base64');
+
+      await RNShare.shareSingle({
+        filePath: path,
+        social: RNShare.Social.Whatsapp,
+        title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
+        message: `${COMPANY.name} Receipt`,
+      });
+    } catch (error) {
+      alert('Failed to share to WhatsApp: ' + error.message);
+    }
   };
 
 const sharePDFViaEmail = async () => {
@@ -203,39 +197,15 @@ const sharePDFViaEmail = async () => {
     setPrintModalOpen(true);
   };
 
-  const doPrint = () => {
+  const doPrint = async () => {
     if (!receiptRef.current) return;
 
-    // Ensure content exists
-    if (!receiptRef.current.innerHTML.trim()) {
-      alert('No receipt content to print. Please wait for the receipt to load.');
-      return;
-    }
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    // Must write content synchronously when window opens, or use document.open()
-    printWindow.document.open();
-    printWindow.document.write(`
-      <html>
-        <head>
-          <style>
-            @page { margin: 0; size: ${printSize === 'a4' ? 'A4' : '58mm auto'}; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .rpt-divider { border-color: #999; }
-            .rpt-total-box { border: 2px solid #22c55e !important; background: none !important; }
-            h2, h3 { text-align: center; }
-            p { margin: 4px 0; }
-          </style>
-        </head>
-        <body>
-          ${receiptRef.current.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    const content = receiptRef.current.innerHTML;
+    await print({
+      html: content,
+      jobName: 'Jabima Receipt',
+      isLandscape: printSize === 'a4',
+    });
   };
 
   const downloadPDF = async (existingBlob?: Blob) => {
@@ -244,14 +214,20 @@ const sharePDFViaEmail = async () => {
     if (!blob) return;
 
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+
+    try {
+      const blobString = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string || '');
+        reader.readAsDataURL(blob);
+      });
+      const base64 = blobString!.split(',')[1];
+      await RNFS.writeFile(path, base64, 'base64');
+      alert(`Receipt saved to:\n${path}`);
+    } catch (error) {
+      alert('Failed to save receipt: ' + error.message);
+    }
   };
 
   if (isLoading || !sale) {
