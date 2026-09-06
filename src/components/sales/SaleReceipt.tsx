@@ -6,6 +6,9 @@ import { Mail, MessageCircle, FileDown, Printer } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import RNFS from 'react-native-fs';
+import RNShare from 'react-native-share';
+import { print, selectPrinter } from 'react-native-print';
 
 interface Props {
   saleId: string;
@@ -197,6 +200,10 @@ const sharePDFViaEmail = async () => {
     window.location.href = mailtoUrl;
   };
 
+  const printReceipt = () => {
+    setPrintModalOpen(true);
+  };
+
   const doPrint = () => {
     if (!receiptRef.current) return;
 
@@ -238,26 +245,6 @@ const sharePDFViaEmail = async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
-    // Also try to save to file system for mobile
-    try {
-      if ('msWriteBlob' in navigator) {
-        // IE approach
-        navigator.msWriteBlob(blob, fileName);
-      } else {
-        const filePath = `${window.document.dir}/${fileName}`;
-        // Try to save using Blob constructor and link click
-        const blobUrl = URL.createObjectURL(blob);
-        const tempLink = document.createElement('a');
-        tempLink.href = blobUrl;
-        tempLink.download = fileName;
-        document.body.appendChild(tempLink);
-        tempLink.click();
-        document.body.removeChild(tempLink);
-      }
-    } catch (e) {
-      // Ignored - the URL.createObjectURL approach above works
-    }
   };
 
   if (isLoading || !sale) {
@@ -308,6 +295,50 @@ const sharePDFViaEmail = async () => {
           <Mail className="h-4 w-4" />Email
         </Button>
       </div>
+
+      {printModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl transform scale-100 transition-transform duration-300">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Print Receipt</h3>
+              <button onClick={() => setPrintModalOpen(false)} className="text-gray-500 hover:text-red-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path className="stroke-width-2" d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Print Size</label>
+              <select onChange={(e) => setPrintSize(e.target.value as PrintSize)} className="w-full rounded border border-input p-2">
+                <option value="thermal">Thermal (58mm)</option>
+                <option value="a4">A4 Paper</option>
+              </select>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Number of Copies</label>
+              <input
+                type="number"
+                value={printCopies}
+                onChange={(e) => setPrintCopies(Math.max(1, Number(e.target.value)))}
+                className="w-full rounded border border-input p-2"
+                min="1"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => {
+                doPrint();
+                setPrintModalOpen(false);
+              }} className="flex-1 bg-green-600 text-white py-2 rounded hover:bg-green-700">
+                Print
+              </button>
+              <button onClick={() => setPrintModalOpen(false)} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded hover:bg-gray-300">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div ref={receiptRef} className="bg-white/80 backdrop-blur-sm rounded-lg border-2 border-black/20 overflow-hidden mx-auto shadow-lg"
         style={{ width: printSize === 'a4' ? '190mm' : '58mm', minWidth: printSize === 'a4' ? 'auto' : '58mm', maxWidth: '100%' }}>
