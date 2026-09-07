@@ -5,8 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Mail, MessageCircle, FileDown, Printer } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
-import RNFS from 'react-native-fs';
-import RNShare from 'react-native-share';
 
 interface Props {
   saleId: string;
@@ -302,25 +300,27 @@ const formatReceiptText = () => {
     if (!blob) return;
 
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+    const file = new File([blob], fileName, { type: 'application/pdf' });
 
     try {
-      const blobString = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string || '');
-        reader.readAsDataURL(blob);
-      });
-      const base64 = blobString!.split(',')[1];
-      await RNFS.writeFile(path, base64, 'base64');
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
+          text: `${COMPANY.name} Receipt`,
+        });
+        return;
+      }
 
-      await RNShare.shareSingle({
-        filePath: path,
-        social: RNShare.Social.Whatsapp,
-        title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
-        message: `${COMPANY.name} Receipt`,
-      });
-    } catch (error) {
-      alert('Failed to share to WhatsApp: ' + error.message);
+      // Fallback for browsers without the Web Share API (e.g. desktop):
+      // download the PDF and open WhatsApp Web with a pre-filled message.
+      downloadPDF(blob);
+      const message = encodeURIComponent(`${COMPANY.name} Receipt #${sale.id.slice(0, 8).toUpperCase()} - the PDF has been downloaded, please attach it here.`);
+      window.open(`https://wa.me/?text=${message}`, '_blank');
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') {
+        alert('Failed to share to WhatsApp: ' + error.message);
+      }
     }
   };
 
@@ -342,20 +342,20 @@ const sharePDFViaEmail = async () => {
     const blob = pdfBlob || await generatePDFBlob();
     if (!blob) return;
 
-    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-
     try {
-      const blobString = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string || '');
-        reader.readAsDataURL(blob);
-      });
-      const base64 = blobString!.split(',')[1];
-      await RNFS.writeFile(path, base64, 'base64');
-      alert(`PDF saved. Open it in a PDF viewer to print.\n${path}`);
-    } catch (error) {
-      alert('Failed to save PDF for printing: ' + error.message);
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.focus();
+          printWindow.print();
+        };
+      } else {
+        alert('Please allow pop-ups to print the receipt.');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error: any) {
+      alert('Failed to print receipt: ' + error.message);
     }
   };
 
@@ -365,18 +365,17 @@ const sharePDFViaEmail = async () => {
     if (!blob) return;
 
     const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
 
     try {
-      const blobString = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string || '');
-        reader.readAsDataURL(blob);
-      });
-      const base64 = blobString!.split(',')[1];
-      await RNFS.writeFile(path, base64, 'base64');
-      alert(`Receipt saved to:\n${path}`);
-    } catch (error) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
       alert('Failed to save receipt: ' + error.message);
     }
   };
