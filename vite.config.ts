@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    deps: {
+      externalize: ['react-native'],
+    },
   },
   plugins: [
     react(),
@@ -15,10 +18,10 @@ export default defineConfig(({ mode }) => ({
     // Will be re-enabled after the build issue is resolved
   ],
   optimizeDeps: {
-    exclude: ['react-native-fs'],
+    exclude: ['react-native-fs', 'react-native'],
   },
-  // Use esbuild for all transforms to avoid rollup's commonjs parsing
-  // of react-native-fs which has TypeScript syntax in .js files
+  // Externalize react-native-fs for build only
+  external: ['react-native-fs'],
   esbuild: {
     target: 'es2020',
     logLevel: 'warning',
