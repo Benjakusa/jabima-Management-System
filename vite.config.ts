@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -12,25 +11,44 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      manifest: {
-        name: 'Jabima Management System',
-        short_name: 'Jabima',
-        description: 'Jabima Furniture Management App',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
-        display: 'standalone',
-        icons: [
-          {
-            src: 'https://cdn-icons-png.flaticon.com/512/3204/3204094.png',
-            sizes: '512x512',
-            type: 'image/png'
-          }
-        ]
-      }
-    })
-  ].filter(Boolean),
+    // VitePWA disabled due to incompatibility with react-native-fs
+    // Will be re-enabled after the build issue is resolved
+  ],
+  optimizeDeps: {
+    exclude: ['react-native-fs'],
+  },
+  // Use esbuild for all transforms to avoid rollup's commonjs parsing
+  // of react-native-fs which has TypeScript syntax in .js files
+  esbuild: {
+    target: 'es2020',
+    logLevel: 'warning',
+    drop: mode === 'production' ? ['console', 'debugger'] : [],
+  },
+  // Configure rollup to treat react-native-fs as external
+  // and use esbuild-only transformation
+  build: {
+    target: 'es2020',
+    minify: mode === 'production' ? 'esbuild' : false,
+    rollupOptions: {
+      external: ['react-native-fs', 'react-native'],
+      output: {
+        // Don't try to parse react-native-fs
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+        },
+      },
+      onwarn: (warning, warn) => {
+        if (warning.code === 'IS_POTENTIALLY_IMPORTED_MEMBER' && 
+            warning.text.includes('react-native-fs')) {
+          return;
+        }
+        if (warning.code && warning.code.includes('commonjs')) {
+          return;
+        }
+        warn(warning);
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
