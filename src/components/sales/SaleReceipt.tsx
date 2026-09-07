@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Mail, MessageCircle, FileDown, Printer } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
 
@@ -93,32 +92,176 @@ const SaleReceipt = ({ saleId, type }: Props) => {
   });
 
   const generatePDFBlob = async (): Promise<Blob | null> => {
-    const printContent = receiptRef.current;
-    if (!printContent) return null;
-
-    const canvas = await html2canvas(printContent, {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      logging: false,
-      allowTaint: false,
-      useCORS: true,
-    });
-
-    const imgData = canvas.toDataURL('image/png');
-    const imgWidth = 190;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    if (!sale) return null;
 
     const pdf = new jsPDF({
-      orientation: imgHeight > imgWidth ? 'portrait' : 'portrait',
+      orientation: 'portrait',
       unit: 'mm',
-      format: printSize === 'a4' ? 'a4' : [58, Math.max(imgHeight, 80)],
+      format: printSize === 'a4' ? 'a4' : [58, 210],
     });
 
-    if (printSize === 'thermal') {
-      pdf.addImage(imgData, 'PNG', 0, 0, 58, imgHeight * (58 / imgWidth));
-    } else {
-      pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+    let y = 10;
+
+    // Company header
+    pdf.setFontSize(printSize === 'a4' ? 11 : 7);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(COMPANY.name, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
+    y += 14;
+
+    pdf.setFontSize(printSize === 'a4' ? 7 : 5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(COMPANY.tagline, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
+    y += 8;
+
+    pdf.setFontSize(printSize === 'a4' ? 8 : 5);
+    pdf.text(`${displayPhone} &bull; ${displayEmail}`, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
+    y += 8;
+
+    if (branch) {
+      pdf.setFontSize(printSize === 'a4' ? 8 : 5);
+      pdf.text(`${branch.name}${branch.location ? ' - ' + branch.location : ''}`, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
+      y += 8;
     }
+
+    y += 5;
+
+    // Separator
+    pdf.setDrawColor(102, 102, 102);
+    pdf.setLineWidth(0.5);
+    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
+    y += 8;
+
+    // Receipt title
+    pdf.setFontSize(printSize === 'a4' ? 14 : 10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SALES RECEIPT', printSize === 'a4' ? 60 : 10, y, { align: 'center' });
+    y += 12;
+
+    // Separator
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.5);
+    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
+    y += 8;
+
+    // Date/Time
+    pdf.setFontSize(printSize === 'a4' ? 10 : 7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Date: ${new Date(sale.created_at).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' })}`, 14, y);
+    y += 7;
+    pdf.text(`Time: ${new Date(sale.created_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}`, 14, y);
+    y += 7;
+
+    // Item
+    const itemLabel = type === 'product' ? 'Product' : 'Service';
+    pdf.text(`${itemLabel}: ${itemName}`, 14, y);
+    y += 7;
+
+    // Product ID or Service details
+    if (type === 'product' && s.finished_product_id) {
+      pdf.setFontSize(printSize === 'a4' ? 9 : 6);
+      pdf.setFont('courier', 'normal');
+      pdf.text(`Product ID: ${s.finished_product_id.slice(0, 8).toUpperCase()}`, 14, y);
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+    }
+    if (type === 'service' && s.description) {
+      pdf.setFontSize(printSize === 'a4' ? 9 : 6);
+      pdf.text(`Details: ${s.description}`, 14, y);
+      y += 7;
+    }
+
+    y += 5;
+
+    // Customer
+    pdf.text(`Customer: ${sale.customer_name}`, 14, y);
+    y += 7;
+    if (sale.customer_phone) {
+      pdf.text(`Phone: ${sale.customer_phone}`, 14, y);
+      y += 7;
+    }
+
+    y += 5;
+
+    // Payment mode separator
+    pdf.setDrawColor(102, 102, 102);
+    pdf.setLineWidth(0.3);
+    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
+    y += 5;
+
+    // Mode
+    pdf.setFontSize(printSize === 'a4' ? 10 : 7);
+    pdf.text(`Mode: ${isLipa ? 'LIPA POLE POLE' : 'FULL PAYMENT'}`, 14, y);
+    y += 7;
+
+    // Payment details
+    if (hasPaymentTxns) {
+      if (cashT > 0) {
+        pdf.text(`Cash: Ksh ${cashT.toLocaleString()}`, 14, y);
+        y += 7;
+      }
+      if (mpesaT > 0) {
+        pdf.text(`M-Pesa: Ksh ${mpesaT.toLocaleString()}`, 14, y);
+        y += 7;
+      }
+      if (paymentTxns && paymentTxns.length > 0) {
+        pdf.setFontSize(printSize === 'a4' ? 8 : 5);
+        pdf.setFont('courier', 'normal');
+        const refs = paymentTxns.filter((t: any) => t.payment_method === 'mpesa').map((t: any) => t.reference_number).filter(Boolean);
+        if (refs.length > 0) {
+          pdf.text(`M-Pesa Ref: ${refs.join(', ')}`, 14, y);
+        }
+        y += 7;
+        pdf.setFont('helvetica', 'normal');
+      }
+    } else {
+      pdf.setFontSize(printSize === 'a4' ? 10 : 7);
+      pdf.text(`Payment Method: ${paymentMethodDisplay}`, 14, y);
+      y += 7;
+      if (isCashPayment) {
+        pdf.text(`Cash Received: Ksh ${s.amount_received?.toLocaleString()}`, 14, y);
+        y += 7;
+        pdf.text(`Change Given: Ksh ${s.change_given?.toLocaleString()}`, 14, y);
+        y += 7;
+      }
+    }
+
+    if (isLipa && remainingBalance > 0) {
+      pdf.setFontSize(printSize === 'a4' ? 10 : 7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Remaining Balance: Ksh ${remainingBalance.toLocaleString()}`, 14, y);
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+    }
+
+    y += 5;
+
+    // Total box
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(1);
+    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
+    y += 5;
+
+    pdf.setFontSize(printSize === 'a4' ? 12 : 9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`TOTAL: Ksh ${amount.toLocaleString()}`, 14, y, { align: 'right' });
+    y += 12;
+
+    // Served by
+    pdf.setFontSize(printSize === 'a4' ? 10 : 7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Served by: ${officerProfile?.full_name || 'Staff'}`, 14, y);
+    y += 7;
+
+    // Footer
+    y += 5;
+    pdf.setFontSize(printSize === 'a4' ? 9 : 6);
+    pdf.setFont('helvetica', 'italic');
+    pdf.text('Thank you for choosing', 14, y, { align: 'center' });
+    y += 5;
+    pdf.text('Jabima Funeral Directors', 14, y, { align: 'center' });
+    y += 5;
+    pdf.setFontSize(printSize === 'a4' ? 8 : 5);
+    pdf.text('This is a computer-generated receipt', 14, y, { align: 'center' });
 
     const blob = pdf.output('blob');
     setPdfBlob(blob);
@@ -193,19 +336,27 @@ const sharePDFViaEmail = async () => {
     window.location.href = mailtoUrl;
   };
 
-  const printReceipt = () => {
-    setPrintModalOpen(true);
-  };
-
   const doPrint = async () => {
-    if (!receiptRef.current) return;
+    if (!sale) return;
 
-    const content = receiptRef.current.innerHTML;
-    await print({
-      html: content,
-      jobName: 'Jabima Receipt',
-      isLandscape: printSize === 'a4',
-    });
+    const blob = pdfBlob || await generatePDFBlob();
+    if (!blob) return;
+
+    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
+    const path = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+
+    try {
+      const blobString = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string || '');
+        reader.readAsDataURL(blob);
+      });
+      const base64 = blobString!.split(',')[1];
+      await RNFS.writeFile(path, base64, 'base64');
+      alert(`PDF saved. Open it in a PDF viewer to print.\n${path}`);
+    } catch (error) {
+      alert('Failed to save PDF for printing: ' + error.message);
+    }
   };
 
   const downloadPDF = async (existingBlob?: Blob) => {
