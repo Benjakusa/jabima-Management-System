@@ -2,9 +2,13 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Mail, MessageCircle, FileDown, Printer } from 'lucide-react';
+import { Mail, MessageCircle, FileDown, Printer, Loader2 } from 'lucide-react';
 import logoImage from '@/assets/logo.png';
 import jsPDF from 'jspdf';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { useToast } from '@/hooks/use-toast';
 
 interface Props {
   saleId: string;
@@ -27,6 +31,10 @@ const SaleReceipt = ({ saleId, type }: Props) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [printSize, setPrintSize] = useState<PrintSize>('thermal');
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [busy, setBusy] = useState<'download' | 'whatsapp' | 'print' | 'email' | null>(null);
+  const { toast } = useToast();
+  const isNative = Capacitor.isNativePlatform();
+  const receiptNo = saleId.slice(0, 8).toUpperCase();
 
   const { data: sale, isLoading } = useQuery({
     queryKey: ['receipt-data', saleId, type],
@@ -92,6 +100,27 @@ const SaleReceipt = ({ saleId, type }: Props) => {
   const generatePDFBlob = async (): Promise<Blob | null> => {
     if (!sale) return null;
 
+    // ---- receipt figures (computed here — generatePDFBlob runs before render consts) ----
+    const sd = sale as any;
+    const amount = type === 'product' ? sd.selling_price : sd.amount;
+    const itemName = type === 'product' ? sd.product_type : sd.service_name;
+    const cashT = (paymentTxns || []).filter((t: any) => t.payment_method === 'cash').reduce((n: number, t: any) => n + (t.amount || 0), 0);
+    const mpesaT = (paymentTxns || []).filter((t: any) => t.payment_method === 'mpesa').reduce((n: number, t: any) => n + (t.amount || 0), 0);
+    const hasPaymentTxns = !!(paymentTxns && paymentTxns.length > 0);
+    const dueTotal = (instalments || []).reduce((n: number, i: any) => n + (i.amount_due || 0), 0);
+    const paidTotal = (instalments || []).reduce((n: number, i: any) => n + (i.amount_paid || 0), 0);
+    const remainingBalance = Math.max(0, dueTotal - paidTotal);
+    const isLipa = !!sd.is_lipa_pole_pole;
+    const isCashPayment = sd.payment_method === 'cash';
+    const paymentMethodDisplay = isCashPayment ? 'CASH' : 'M-PESA';
+
+    // Page geometry: thermal roll is 58mm wide, A4 is 210mm wide.
+    // Centre X must be pageWidth/2 — never a hardcoded 10/60.
+    const pageWidth = printSize === 'a4' ? 210 : 58;
+    const margin = printSize === 'a4' ? 14 : 4;
+    const rightEdge = pageWidth - margin;
+    const cx = pageWidth / 2;
+
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -100,166 +129,225 @@ const SaleReceipt = ({ saleId, type }: Props) => {
 
     let y = 10;
 
-    // Company header
-    pdf.setFontSize(printSize === 'a4' ? 11 : 7);
+    const ensureSpace = (needed: number) => {
+      const pageH = printSize === 'a4' ? 297 : 210;
+      if (y + needed > pageH - 10) {
+        if (printSize === 'a4') pdf.addPage('a4', 'portrait');
+        else pdf.addPage([58, 210], 'portrait');
+        y = 10;
+      }
+    };
+    const line = (needed = 7) => { ensureSpace(needed); };
+
+    // Company header (centred on true page centre)
+    pdf.setFontSize(printSize === 'a4' ? 13 : 8);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(COMPANY.name, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
-    y += 14;
+    line(10);
+    pdf.text(COMPANY.name, cx, y, { align: 'center' });
+    y += printSize === 'a4' ? 6 : 5;
 
-    pdf.setFontSize(printSize === 'a4' ? 7 : 5);
+    pdf.setFontSize(printSize === 'a4' ? 8 : 5.5);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(COMPANY.tagline, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
-    y += 8;
+    line(6);
+    pdf.text(COMPANY.tagline, cx, y, { align: 'center' });
+    y += 4;
 
-    pdf.setFontSize(printSize === 'a4' ? 8 : 5);
-    pdf.text(`${displayPhone} &bull; ${displayEmail}`, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
-    y += 8;
+    pdf.setFontSize(printSize === 'a4' ? 8 : 5.5);
+    line(6);
+    // NOTE: plain ASCII separators only — '&bull;' is HTML and prints literally in jsPDF.
+    pdf.text(`${displayPhone} | ${displayEmail}`, cx, y, { align: 'center' });
+    y += 4;
+    line(6);
+    pdf.text(COMPANY.website, cx, y, { align: 'center' });
+    y += 4;
 
     if (branch) {
-      pdf.setFontSize(printSize === 'a4' ? 8 : 5);
-      pdf.text(`${branch.name}${branch.location ? ' - ' + branch.location : ''}`, printSize === 'a4' ? 60 : 10, y, { align: 'center' });
-      y += 8;
+      pdf.setFontSize(printSize === 'a4' ? 8 : 5.5);
+      line(6);
+      const branchLine = `${branch.name}${branch.location ? ' - ' + branch.location : ''}`;
+      const splitBranch = pdf.splitTextToSize(branchLine, pageWidth - margin * 2);
+      pdf.text(splitBranch, cx, y, { align: 'center' });
+      y += 4 * (Array.isArray(splitBranch) ? splitBranch.length : 1);
     }
 
-    y += 5;
+    y += 3;
 
     // Separator
     pdf.setDrawColor(102, 102, 102);
     pdf.setLineWidth(0.5);
-    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
-    y += 8;
+    line(8);
+    pdf.line(margin, y, rightEdge, y);
+    y += 5;
 
-    // Receipt title
+    // Receipt title + receipt number
     pdf.setFontSize(printSize === 'a4' ? 14 : 10);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('SALES RECEIPT', printSize === 'a4' ? 60 : 10, y, { align: 'center' });
-    y += 12;
+    line(12);
+    pdf.text('SALES RECEIPT', cx, y, { align: 'center' });
+    y += 6;
+    pdf.setFontSize(printSize === 'a4' ? 9 : 6);
+    pdf.setFont('courier', 'normal');
+    pdf.text(`Receipt #: ${receiptNo}`, cx, y, { align: 'center' });
+    y += 6;
 
     // Separator
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(0.5);
-    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
-    y += 8;
+    line(8);
+    pdf.line(margin, y, rightEdge, y);
+    y += 6;
 
     // Date/Time
     pdf.setFontSize(printSize === 'a4' ? 10 : 7);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`Date: ${new Date(sale.created_at).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' })}`, 14, y);
-    y += 7;
-    pdf.text(`Time: ${new Date(sale.created_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}`, 14, y);
-    y += 7;
+    line(7);
+    pdf.text(`Date: ${new Date(sale.created_at).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' })}`, margin, y);
+    y += 5;
+    line(7);
+    pdf.text(`Time: ${new Date(sale.created_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}`, margin, y);
+    y += 5;
 
-    // Item
+    // Item (wrapped so long names never overflow the 58mm roll)
     const itemLabel = type === 'product' ? 'Product' : 'Service';
-    pdf.text(`${itemLabel}: ${itemName}`, 14, y);
-    y += 7;
+    line(7);
+    const itemLines = pdf.splitTextToSize(`${itemLabel}: ${itemName}`, pageWidth - margin * 2);
+    pdf.text(itemLines, margin, y);
+    y += 5 * (Array.isArray(itemLines) ? itemLines.length : 1);
 
     // Product ID or Service details
-    if (type === 'product' && s.finished_product_id) {
+    if (type === 'product' && sd.finished_product_id) {
       pdf.setFontSize(printSize === 'a4' ? 9 : 6);
       pdf.setFont('courier', 'normal');
-      pdf.text(`Product ID: ${s.finished_product_id.slice(0, 8).toUpperCase()}`, 14, y);
-      y += 7;
+      line(6);
+      pdf.text(`Product ID: ${sd.finished_product_id.slice(0, 8).toUpperCase()}`, margin, y);
+      y += 5;
       pdf.setFont('helvetica', 'normal');
     }
-    if (type === 'service' && s.description) {
+    if (type === 'service' && sd.description) {
       pdf.setFontSize(printSize === 'a4' ? 9 : 6);
-      pdf.text(`Details: ${s.description}`, 14, y);
-      y += 7;
+      line(6);
+      const descLines = pdf.splitTextToSize(`Details: ${sd.description}`, pageWidth - margin * 2);
+      pdf.text(descLines, margin, y);
+      y += 5 * (Array.isArray(descLines) ? descLines.length : 1);
     }
 
-    y += 5;
+    y += 3;
 
-    // Customer
-    pdf.text(`Customer: ${sale.customer_name}`, 14, y);
-    y += 7;
+    // Customer (wrapped)
+    pdf.setFontSize(printSize === 'a4' ? 10 : 7);
+    pdf.setFont('helvetica', 'normal');
+    line(7);
+    const custLines = pdf.splitTextToSize(`Customer: ${sale.customer_name}`, pageWidth - margin * 2);
+    pdf.text(custLines, margin, y);
+    y += 5 * (Array.isArray(custLines) ? custLines.length : 1);
     if (sale.customer_phone) {
-      pdf.text(`Phone: ${sale.customer_phone}`, 14, y);
-      y += 7;
+      line(7);
+      pdf.text(`Phone: ${sale.customer_phone}`, margin, y);
+      y += 5;
     }
 
-    y += 5;
+    y += 3;
 
     // Payment mode separator
     pdf.setDrawColor(102, 102, 102);
     pdf.setLineWidth(0.3);
-    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
-    y += 5;
+    line(5);
+    pdf.line(margin, y, rightEdge, y);
+    y += 4;
 
     // Mode
     pdf.setFontSize(printSize === 'a4' ? 10 : 7);
-    pdf.text(`Mode: ${isLipa ? 'LIPA POLE POLE' : 'FULL PAYMENT'}`, 14, y);
-    y += 7;
+    pdf.setFont('helvetica', 'bold');
+    line(7);
+    pdf.text(`Mode: ${isLipa ? 'LIPA POLE POLE' : 'FULL PAYMENT'}`, margin, y);
+    y += 5;
+    pdf.setFont('helvetica', 'normal');
 
     // Payment details
     if (hasPaymentTxns) {
       if (cashT > 0) {
-        pdf.text(`Cash: Ksh ${cashT.toLocaleString()}`, 14, y);
-        y += 7;
+        line(7);
+        pdf.text(`Cash: Ksh ${cashT.toLocaleString()}`, margin, y);
+        y += 5;
       }
       if (mpesaT > 0) {
-        pdf.text(`M-Pesa: Ksh ${mpesaT.toLocaleString()}`, 14, y);
-        y += 7;
+        line(7);
+        pdf.text(`M-Pesa: Ksh ${mpesaT.toLocaleString()}`, margin, y);
+        y += 5;
       }
       if (paymentTxns && paymentTxns.length > 0) {
         pdf.setFontSize(printSize === 'a4' ? 8 : 5);
         pdf.setFont('courier', 'normal');
         const refs = paymentTxns.filter((t: any) => t.payment_method === 'mpesa').map((t: any) => t.reference_number).filter(Boolean);
         if (refs.length > 0) {
-          pdf.text(`M-Pesa Ref: ${refs.join(', ')}`, 14, y);
+          line(7);
+          const refLines = pdf.splitTextToSize(`M-Pesa Ref: ${refs.join(', ')}`, pageWidth - margin * 2);
+          pdf.text(refLines, margin, y);
+          y += 5 * (Array.isArray(refLines) ? refLines.length : 1);
         }
-        y += 7;
         pdf.setFont('helvetica', 'normal');
       }
     } else {
       pdf.setFontSize(printSize === 'a4' ? 10 : 7);
-      pdf.text(`Payment Method: ${paymentMethodDisplay}`, 14, y);
-      y += 7;
+      line(7);
+      pdf.text(`Payment Method: ${paymentMethodDisplay}`, margin, y);
+      y += 5;
       if (isCashPayment) {
-        pdf.text(`Cash Received: Ksh ${s.amount_received?.toLocaleString()}`, 14, y);
-        y += 7;
-        pdf.text(`Change Given: Ksh ${s.change_given?.toLocaleString()}`, 14, y);
-        y += 7;
+        line(7);
+        pdf.text(`Cash Received: Ksh ${sd.amount_received?.toLocaleString()}`, margin, y);
+        y += 5;
+        line(7);
+        pdf.text(`Change Given: Ksh ${sd.change_given?.toLocaleString()}`, margin, y);
+        y += 5;
       }
     }
 
     if (isLipa && remainingBalance > 0) {
       pdf.setFontSize(printSize === 'a4' ? 10 : 7);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(`Remaining Balance: Ksh ${remainingBalance.toLocaleString()}`, 14, y);
-      y += 7;
+      line(7);
+      pdf.text(`Remaining Balance: Ksh ${remainingBalance.toLocaleString()}`, margin, y);
+      y += 5;
       pdf.setFont('helvetica', 'normal');
     }
 
-    y += 5;
+    y += 3;
 
     // Total box
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(1);
-    pdf.line(10, y, printSize === 'a4' ? 200 : 48, y);
+    line(5);
+    pdf.line(margin, y, rightEdge, y);
     y += 5;
 
-    pdf.setFontSize(printSize === 'a4' ? 12 : 9);
+    pdf.setFontSize(printSize === 'a4' ? 13 : 9);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(`TOTAL: Ksh ${amount.toLocaleString()}`, 14, y, { align: 'right' });
-    y += 12;
+    line(10);
+    // Right-align TOTAL against the true right edge (align:'right' anchors at the given x).
+    pdf.text(`TOTAL: Ksh ${amount.toLocaleString()}`, rightEdge, y, { align: 'right' });
+    y += 7;
 
     // Served by
     pdf.setFontSize(printSize === 'a4' ? 10 : 7);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`Served by: ${officerProfile?.full_name || 'Staff'}`, 14, y);
-    y += 7;
-
-    // Footer
+    line(7);
+    pdf.text(`Served by: ${officerProfile?.full_name || 'Staff'}`, margin, y);
     y += 5;
+
+    // Footer (centred on true page centre)
+    y += 3;
     pdf.setFontSize(printSize === 'a4' ? 9 : 6);
     pdf.setFont('helvetica', 'italic');
-    pdf.text('Thank you for choosing', 14, y, { align: 'center' });
-    y += 5;
-    pdf.text('Jabima Funeral Directors', 14, y, { align: 'center' });
-    y += 5;
+    line(6);
+    pdf.text('Thank you for choosing', cx, y, { align: 'center' });
+    y += 4;
+    line(6);
+    pdf.text('Jabima Funeral Directors', cx, y, { align: 'center' });
+    y += 4;
     pdf.setFontSize(printSize === 'a4' ? 8 : 5);
-    pdf.text('This is a computer-generated receipt', 14, y, { align: 'center' });
+    line(6);
+    const footerLines = pdf.splitTextToSize('This is a computer-generated receipt', pageWidth - margin * 2);
+    pdf.text(footerLines, cx, y, { align: 'center' });
 
     const blob = pdf.output('blob');
     setPdfBlob(blob);
@@ -294,79 +382,162 @@ const formatReceiptText = () => {
     return `${COMPANY.name}\nTel: ${displayPhone}\nEmail: ${displayEmail}\n\n══════════════════════════════\nSALES RECEIPT\nReceipt #: ${sale.id.slice(0, 8).toUpperCase()}\n══════════════════════════════\n\nDate: ${new Date(sale.created_at).toLocaleDateString()}\nTime: ${new Date(sale.created_at).toLocaleTimeString()}\n${type === 'product' ? 'Product' : 'Service'}: ${itemName}\n\nCustomer: ${sale.customer_name}${sale.customer_phone ? `\nPhone: ${sale.customer_phone}` : ''}\n\n──────────────────────────────\n${paymentLines}\n\n══════════════════════════════\nTOTAL: Ksh ${amount.toLocaleString()}\n══════════════════════════════\n\nServed by: ${officerProfile?.full_name || 'Staff'}\nThank you for choosing\nJabima Funeral Directors`;
   };
 
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read PDF data'));
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(',')[1] || '');
+      };
+      reader.readAsDataURL(blob);
+    });
+
+  const writePdfToDevice = async (blob: Blob, fileName: string, dir: Directory): Promise<string> => {
+    const base64 = await blobToBase64(blob);
+    const saved = await Filesystem.writeFile({ path: fileName, data: base64, directory: dir });
+    return saved.uri;
+  };
+
   const sharePDFViaWhatsApp = async () => {
     if (!sale) return;
-    const blob = pdfBlob || await generatePDFBlob();
-    if (!blob) return;
-
-    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-    const file = new File([blob], fileName, { type: 'application/pdf' });
-
+    setBusy('whatsapp');
     try {
+      const blob = pdfBlob || await generatePDFBlob();
+      if (!blob) throw new Error('Could not generate the PDF');
+
+      const fileName = `Receipt-${receiptNo}.pdf`;
+
+      if (isNative) {
+        try {
+          const uri = await writePdfToDevice(blob, fileName, Directory.Cache);
+          await Share.share({
+            title: `Receipt #${receiptNo}`,
+            text: `${COMPANY.name} Receipt #${receiptNo}`,
+            url: uri,
+            dialogTitle: 'Share receipt',
+          });
+          toast({ title: 'Receipt shared', description: 'Choose WhatsApp in the share sheet to send the PDF.' });
+        } catch (e: any) {
+          if (e?.message !== 'Share canceled' && e?.name !== 'AbortError') throw e;
+        }
+        return;
+      }
+
+      const file = new File([blob], fileName, { type: 'application/pdf' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: `Receipt #${sale.id.slice(0, 8).toUpperCase()}`,
+          title: `Receipt #${receiptNo}`,
           text: `${COMPANY.name} Receipt`,
         });
         return;
       }
 
-      // Fallback for browsers without the Web Share API (e.g. desktop):
-      // download the PDF and open WhatsApp Web with a pre-filled message.
-      downloadPDF(blob);
-      const message = encodeURIComponent(`${COMPANY.name} Receipt #${sale.id.slice(0, 8).toUpperCase()} - the PDF has been downloaded, please attach it here.`);
-      window.open(`https://wa.me/?text=${message}`, '_blank');
+      await downloadPDF(blob);
+      const msg = encodeURIComponent(
+        `${COMPANY.name} Receipt #${receiptNo} - the PDF has been downloaded, please attach it here.`
+      );
+      const phone = (sale as any).customer_phone
+        ? String((sale as any).customer_phone).replace(/[^0-9]/g, '')
+        : '';
+      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+      toast({ title: 'PDF downloaded', description: 'Attach the downloaded PDF in WhatsApp to send it.' });
     } catch (error: any) {
-      if (error?.name !== 'AbortError') {
-        alert('Failed to share to WhatsApp: ' + error.message);
+      if (error?.name !== 'AbortError' && error?.message !== 'Share canceled') {
+        toast({ variant: 'destructive', title: 'WhatsApp share failed', description: String(error?.message || error) });
       }
+    } finally {
+      setBusy(null);
     }
   };
 
 const sharePDFViaEmail = async () => {
     if (!sale) return;
-    const blob = pdfBlob || await generatePDFBlob();
-    if (!blob) return;
-
-    downloadPDF(blob);
-
-    const subject = `Sales Receipt #${sale.id.slice(0, 8).toUpperCase()} - ${COMPANY.name}`;
-    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(formatReceiptText())}`;
-    window.location.href = mailtoUrl;
+    setBusy('email');
+    try {
+      const blob = pdfBlob || await generatePDFBlob();
+      if (!blob) throw new Error('Could not generate the PDF');
+      if (isNative) {
+        const uri = await writePdfToDevice(blob, `Receipt-${receiptNo}.pdf`, Directory.Cache);
+        await Share.share({
+          title: `Sales Receipt #${receiptNo}`,
+          text: formatReceiptText(),
+          url: uri,
+          dialogTitle: 'Share receipt',
+        });
+        return;
+      }
+      await downloadPDF(blob);
+      const subject = `Sales Receipt #${receiptNo} - ${COMPANY.name}`;
+      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(formatReceiptText())}`;
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && error?.message !== 'Share canceled') {
+        toast({ variant: 'destructive', title: 'Email share failed', description: String(error?.message || error) });
+      }
+    } finally {
+      setBusy(null);
+    }
   };
 
   const doPrint = async () => {
     if (!sale) return;
-
-    const blob = pdfBlob || await generatePDFBlob();
-    if (!blob) return;
-
+    setBusy('print');
     try {
+      const blob = pdfBlob || await generatePDFBlob();
+      if (!blob) throw new Error('Could not generate the PDF');
+      if (isNative) {
+        try {
+          const uri = await writePdfToDevice(blob, `Receipt-${receiptNo}.pdf`, Directory.Cache);
+          await Share.share({
+            title: `Print Receipt #${receiptNo}`,
+            text: `${COMPANY.name} Receipt #${receiptNo} - choose a printer app to print.`,
+            url: uri,
+            dialogTitle: 'Print receipt (choose printer app)',
+          });
+          toast({ title: 'Sent to printer apps', description: 'Pick your printer / Print app from the share sheet.' });
+        } catch (e: any) {
+          if (e?.message !== 'Share canceled' && e?.name !== 'AbortError') throw e;
+        }
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const printWindow = window.open(url, '_blank');
       if (printWindow) {
-        printWindow.onload = () => {
-          printWindow.focus();
-          printWindow.print();
-        };
+        window.setTimeout(() => { try { printWindow.focus(); printWindow.print(); } catch { /* noop */ } }, 800);
+        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
       } else {
-        alert('Please allow pop-ups to print the receipt.');
+        toast({ variant: 'destructive', title: 'Pop-up blocked', description: 'Please allow pop-ups to print the receipt.' });
+        URL.revokeObjectURL(url);
       }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error: any) {
-      alert('Failed to print receipt: ' + error.message);
+      toast({ variant: 'destructive', title: 'Print failed', description: String(error?.message || error) });
+    } finally {
+      setBusy(null);
     }
   };
 
   const downloadPDF = async (existingBlob?: Blob) => {
     if (!sale) return;
-    const blob = existingBlob || pdfBlob || await generatePDFBlob();
-    if (!blob) return;
-
-    const fileName = `Receipt-${sale.id.slice(0, 8).toUpperCase()}.pdf`;
-
+    const wasIdle = busy === null;
+    if (wasIdle) setBusy('download');
     try {
+      const blob = existingBlob || pdfBlob || await generatePDFBlob();
+      if (!blob) throw new Error('Could not generate the PDF');
+
+      const fileName = `Receipt-${receiptNo}.pdf`;
+
+      if (isNative) {
+        try {
+          await writePdfToDevice(blob, fileName, Directory.Documents);
+          toast({ title: 'Receipt downloaded', description: `${fileName} saved to Documents.` });
+        } catch {
+          const uri = await writePdfToDevice(blob, fileName, Directory.Cache);
+          await Share.share({ title: fileName, text: `${COMPANY.name} Receipt #${receiptNo}`, url: uri, dialogTitle: 'Save receipt file' });
+        }
+        return;
+      }
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -374,9 +545,12 @@ const sharePDFViaEmail = async () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast({ title: 'Receipt downloaded', description: fileName });
     } catch (error: any) {
-      alert('Failed to save receipt: ' + error.message);
+      toast({ variant: 'destructive', title: 'Download failed', description: String(error?.message || error) });
+    } finally {
+      if (wasIdle) setBusy(null);
     }
   };
 
@@ -415,17 +589,17 @@ const sharePDFViaEmail = async () => {
           <option value="thermal">Thermal (58mm)</option>
           <option value="a4">A4 Paper</option>
         </select>
-        <Button onClick={() => downloadPDF()} variant="outline" size="lg" className="flex-1">
-          <FileDown className="h-4 w-4" />Download
+        <Button onClick={() => downloadPDF()} disabled={busy !== null} variant="outline" size="lg" className="flex-1">
+          {busy === 'download' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}Download
         </Button>
-        <Button onClick={sharePDFViaWhatsApp} variant="outline" size="lg" className="flex-1">
-          <MessageCircle className="h-4 w-4" />WhatsApp
+        <Button onClick={sharePDFViaWhatsApp} disabled={busy !== null} variant="outline" size="lg" className="flex-1">
+          {busy === 'whatsapp' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}WhatsApp
         </Button>
-        <Button onClick={doPrint} variant="outline" size="lg" className="flex-1">
-          <Printer className="h-4 w-4" />Print
+        <Button onClick={doPrint} disabled={busy !== null} variant="outline" size="lg" className="flex-1">
+          {busy === 'print' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}Print
         </Button>
-        <Button onClick={sharePDFViaEmail} variant="outline" size="lg" className="flex-1">
-          <Mail className="h-4 w-4" />Email
+        <Button onClick={sharePDFViaEmail} disabled={busy !== null} variant="outline" size="lg" className="flex-1">
+          {busy === 'email' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Email
         </Button>
       </div>
 
